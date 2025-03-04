@@ -1,0 +1,3 @@
+/Users/olegrodin/Visual Studio Code Projects/Hex/build/CMakeFiles/Hex.dir
+/Users/olegrodin/Visual Studio Code Projects/Hex/build/CMakeFiles/edit_cache.dir
+/Users/olegrodin/Visual Studio Code Projects/Hex/build/CMakeFiles/rebuild_cache.dir

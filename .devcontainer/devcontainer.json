@@ -1,0 +1,32 @@
+{
+  "name": "Python-CPP-TS Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/app",
+  // Настройка расширений через customizations
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-python.python",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-vscode-remote.remote-containers"
+      ],
+      // Настройки VS Code внутри контейнера
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  // Команда, выполняемая после создания контейнера
+  "postCreateCommand": "pip install -r /app/python/requirements.txt && cd /app/cpp && mkdir -p build && cd build && cmake .. && make && cd /app/typescript && npm install && npm run build",
+  // Порты (если нужно, например, для TS Node)
+  "forwardPorts": [],
+  // Указываем, что контейнер запускается в интерактивном режиме
+  "runArgs": ["--rm", "-it"],
+  // Пользователь внутри контейнера (по умолчанию root, можно сменить на другого)
+  "containerUser": "root"
+}
