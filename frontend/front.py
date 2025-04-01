@@ -415,6 +415,7 @@ class HexWindow(QMainWindow):
         controls_panel = QWidget()
         controls_layout = QFormLayout(controls_panel)
         
+        # Uncomment and fix the turn label
         self.turn_label = QLabel("Blue's Turn")
         self.turn_label.setStyleSheet("font-weight: bold; color: blue;")
         self.turn_label.setAlignment(Qt.AlignCenter)
@@ -442,7 +443,8 @@ class HexWindow(QMainWindow):
         mode_label.setStyleSheet("font-weight: bold;")
         left_layout.addWidget(mode_label)
         
-        rules_label = QLabel("Blue: Connect blue boarders • Red: Connect red boarders")
+        # Fix typo: "boarders" → "borders"
+        rules_label = QLabel("Blue: Connect blue borders • Red: Connect red borders")
         rules_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(rules_label)
         
@@ -477,13 +479,18 @@ class HexWindow(QMainWindow):
             winner = self.game.check_winner()
             if winner:
                 winner_name = 'Blue' if winner == 1 else 'Red'
+                # Make win message consistent with regular moves
                 from PyQt5.QtWidgets import QMessageBox
                 msg = QMessageBox()
                 msg.setWindowTitle("Game Over")
-                msg.setText(f"{winner_name} has won the game!")
+                msg.setText(f"{winner_name} has won the game by connecting their borders!")
+                msg.setInformativeText("Click 'New Game' to play again.")
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
-
+                
+                # Update game status in parent window
+                self.update_game_status()
+    
     def update_swap_button(self):
         # Show swap button only when it can be used (after first move, on red's turn)
         can_swap = self.game.move_count == 1 and not self.game.is_black_turn
@@ -522,8 +529,8 @@ class HexWindow(QMainWindow):
         self.update_turn_label()
 
     def reset_game(self):
-        # Start a new game
-        self.game = HexGame(11)  # 11x11 board
+        # Start a new game using the reset method instead of creating a new object
+        self.game.reset()  # Use the reset method
         self.board_widget.game = self.game
         self.board_widget.update()  # Redraw board
         self.steps_list.clear()  # Clear move history
