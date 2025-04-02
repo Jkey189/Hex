@@ -81,25 +81,34 @@ def has_winning_path(board, player):
     if player == 1:  # Blue: check top to bottom connection
         # Start from each top cell with player's piece
         for col in range(size):
-            if board[0][col] == player and not visited[0][col]:
+            # Consider corners as part of both sides
+            if (board[0][col] == player or (col == 0 or col == size-1)) and not visited[0][col]:
                 if dfs_path(board, 0, col, player, visited, 1):
                     return True  # Found a path to bottom
     else:  # Red: check left to right connection
         # Start from each left cell with player's piece
         for row in range(size):
-            if board[row][0] == player and not visited[row][0]:
+            # Consider corners as part of both sides
+            if (board[row][0] == player or (row == 0 or row == size-1)) and not visited[row][0]:
                 if dfs_path(board, row, 0, player, visited, 2):
                     return True  # Found a path to right edge
     
     return False  # No winning path found
 
 def dfs_path(board, row, col, player, visited, direction):
-    # Depth-first search to find path to opposite edge
     size = len(board)
     
     # Check if we reached opposite edge
-    if (direction == 1 and row == size - 1) or (direction == 2 and col == size - 1):
-        return True
+    if direction == 1 and row == size - 1:  # Blue reaches bottom
+        # Consider corner cells as belonging to both players
+        return board[row][col] == player or col == 0 or col == size-1
+    elif direction == 2 and col == size - 1:  # Red reaches right
+        # Consider corner cells as belonging to both players
+        return board[row][col] == player or row == 0 or row == size-1
+        
+    # Don't explore further if cell is not owned by player and not a corner
+    if board[row][col] != player and not ((row == 0 or row == size-1) and (col == 0 or col == size-1)):
+        return False
         
     visited[row][col] = True
     
@@ -108,9 +117,12 @@ def dfs_path(board, row, col, player, visited, direction):
     
     for dr, dc in directions:
         nr, nc = row + dr, col + dc
-        if 0 <= nr < size and 0 <= nc < size and board[nr][nc] == player and not visited[nr][nc]:
-            if dfs_path(board, nr, nc, player, visited, direction):
-                return True
+        if 0 <= nr < size and 0 <= nc < size and not visited[nr][nc]:
+            # For non-corner cells, we need a player's piece
+            # For corner cells, we can pass through regardless
+            if board[nr][nc] == player or ((nr == 0 or nr == size-1) and (nc == 0 or nc == size-1)):
+                if dfs_path(board, nr, nc, player, visited, direction):
+                    return True
     
     return False  # No path found from this cell
 

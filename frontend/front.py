@@ -357,11 +357,12 @@ class HexBoard(QWidget):
                 winner = self.game.check_winner()
                 if winner:
                     winner_name = 'Blue' if winner == 1 else 'Red'
+                    win_direction = 'top to bottom' if winner == 1 else 'left to right'
                     from PyQt5.QtWidgets import QMessageBox
                     msg = QMessageBox()
                     msg.setWindowTitle("Game Over")
-                    msg.setText(f"{winner_name} has won the game by connecting their borders!")
-                    msg.setInformativeText("Click 'New Game' to play again.")
+                    msg.setText(f"{winner_name} has won by connecting {win_direction}!")
+                    msg.setInformativeText("Remember: The line doesn't need to be straight, and corner cells can be used by either player.")
                     msg.setIcon(QMessageBox.Information)
                     msg.exec_()
                     
@@ -415,9 +416,9 @@ class HexWindow(QMainWindow):
         controls_panel = QWidget()
         controls_layout = QFormLayout(controls_panel)
         
-        # Uncomment and fix the turn label
-        self.turn_label = QLabel("Blue's Turn")
-        self.turn_label.setStyleSheet("font-weight: bold; color: blue;")
+        # Simplify the turn label text
+        self.turn_label = QLabel("HEX")
+        self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.turn_label.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.turn_label)
         
@@ -443,10 +444,16 @@ class HexWindow(QMainWindow):
         mode_label.setStyleSheet("font-weight: bold;")
         left_layout.addWidget(mode_label)
         
-        # Fix typo: "boarders" → "borders"
-        rules_label = QLabel("Blue: Connect blue borders • Red: Connect red borders")
+        # Update the rule description to explain corner hexagons
+        rules_label = QLabel("Blue: Connect top to bottom • Red: Connect left to right")
         rules_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(rules_label)
+        
+        # Add additional information about corners
+        corner_label = QLabel("Corner cells belong to both players!")
+        corner_label.setAlignment(Qt.AlignCenter)
+        corner_label.setStyleSheet("font-style: italic;")
+        left_layout.addWidget(corner_label)
         
         main_layout.addWidget(left_panel)
         
@@ -501,14 +508,14 @@ class HexWindow(QMainWindow):
         # Update the label showing whose turn it is or game status
         if self.game.game_over:
             winner_name = 'Blue' if self.game.winner == 1 else 'Red'
-            self.turn_label.setText(f"{winner_name} Wins!")
+            self.turn_label.setText(f"Winner: {winner_name}")
             self.turn_label.setStyleSheet(f"font-weight: bold; color: {'blue' if self.game.winner == 1 else 'red'}; font-size: 14px;")
         else:
             if self.game.is_black_turn:
-                self.turn_label.setText("Blue's Turn")
+                self.turn_label.setText("Current player: Blue")
                 self.turn_label.setStyleSheet("font-weight: bold; color: blue;")
             else:
-                self.turn_label.setText("Red's Turn")
+                self.turn_label.setText("Current player: Red")
                 self.turn_label.setStyleSheet("font-weight: bold; color: red;")
 
     def update_game_status(self):
@@ -535,8 +542,8 @@ class HexWindow(QMainWindow):
         self.board_widget.update()  # Redraw board
         self.steps_list.clear()  # Clear move history
         self.update_swap_button()  # Reset swap button
-        self.turn_label.setText("Blue's Turn")  # Reset turn indicator
-        self.turn_label.setStyleSheet("font-weight: bold; color: blue;")
+        self.turn_label.setText("HEX")  # Simplified reset turn indicator
+        self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.game_status.setText("")  # Reset game status
 
 if __name__ == "__main__":
