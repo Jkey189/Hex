@@ -6,7 +6,11 @@ from PyQt5.QtGui import QPainter, QPolygonF, QColor, QPen, QFont
 from PyQt5.QtCore import Qt, QPointF, QSize
 import os
 
-import hex_ai_ai
+# Add the parent directory to sys.path to allow imports across directories
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Now import the backend module
+from backend import back
 
 # Class representing the game state and logic
 class HexGame:
@@ -24,7 +28,7 @@ class HexGame:
 
     def to_python_state(self):
         # Convert game state to format used by AI
-        state = hex_ai_ai.HexState(self.size, self.is_black_turn)
+        state = back.HexState(self.size, self.is_black_turn)
         state.board = [row[:] for row in self.board]  # Deep copy of board
         return state
 
@@ -70,11 +74,11 @@ class HexGame:
 
     def check_winner(self):
         # Check if either player has won
-        if hex_ai_ai.check_win(self.board, 1):
+        if back.check_win(self.board, 1):
             self.game_over = True
             self.winner = 1  # Blue wins
             return 1
-        elif hex_ai_ai.check_win(self.board, 2):
+        elif back.check_win(self.board, 2):
             self.game_over = True
             self.winner = 2  # Red wins 
             return 2
@@ -419,7 +423,7 @@ class HexBoard(QWidget):
         
         # Use AI to find the best move
         state = self.game.to_python_state()
-        best_move = hex_ai_ai.find_best_move(state, depth=ai_depth)
+        best_move = back.find_best_move(state, depth=ai_depth)
         
         # Make the move if valid
         if best_move[0] >= 0 and best_move[1] >= 0:

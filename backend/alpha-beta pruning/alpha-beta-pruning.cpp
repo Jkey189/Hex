@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <climits>
 #include <unordered_set>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+namespace py = pybind11;
 
 // Cell states: Empty (0), Player 1 (1), Player 2 (2)
 enum Player { EMPTY = 0, PLAYER1 = 1, PLAYER2 = 2 };
@@ -112,6 +116,28 @@ public:
         }
     }
     
+    void setBoard(const std::vector<std::vector<int>>& pyBoard) {
+        if (pyBoard.size() != size || pyBoard[0].size() != size) {
+            throw std::invalid_argument("Board size mismatch");
+        }
+        
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                board[i][j] = static_cast<Player>(pyBoard[i][j]);
+            }
+        }
+    }
+    
+    std::vector<std::vector<int>> getBoard() const {
+        std::vector<std::vector<int>> result(size, std::vector<int>(size));
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                result[i][j] = static_cast<int>(board[i][j]);
+            }
+        }
+        return result;
+    }
+    
     bool makeMove(int row, int col, Player player) {
         if (row < 0 || row >= size || col < 0 || col >= size || board[row][col] != EMPTY) {
             return false;
@@ -157,6 +183,10 @@ public:
         }
         
         return true;
+    }
+    
+    bool checkWin(Player player) const {
+        return const_cast<HexBoard*>(this)->hasWon(player);
     }
     
     int evaluate(Player maximizingPlayer) const {
@@ -300,29 +330,29 @@ std::pair<int, int> findBestMove(HexBoard& board, int depth, Player player) {
     return bestMove;
 }
 
-int main() {
-    int boardSize = 5; // Use a smaller board for faster computation
-    int searchDepth = 3;
+PYBIND11_MODULE(hex_cpp, m) {
+    m.doc() = "C++ implementation of Hex game with alpha-beta pruning";
     
-    HexBoard hexBoard(boardSize);
+    py::enum_<Player>(m, "Player")
+        .value("EMPTY", Player::EMPTY)
+        .value("PLAYER1", Player::PLAYER1)
+        .value("PLAYER2", Player::PLAYER2)
+        .export_values();
     
-    // Example: Make a few moves
-    hexBoard.makeMove(0, 0, PLAYER1);
-    hexBoard.makeMove(1, 1, PLAYER2);
+    py::class_<HexBoard>(m, "HexBoard")
+        .def(py::init<int>())
+        .def("set_board", &HexBoard::setBoard)
+        .def("get_board", &HexBoard::getBoard)
+        .def("make_move", &HexBoard::makeMove)
+        .def("undo_move", &HexBoard::undoMove)
+        .def("get_empty_cells", &HexBoard::getEmptyCells)
+        .def("is_game_over", &HexBoard::isGameOver)
+        .def("check_win", &HexBoard::checkWin)
+        .def("evaluate", &HexBoard::evaluate)
+        .def("print", &HexBoard::print)
+        .def("get_size", &HexBoard::getSize);
     
-    std::cout << "Current board state:" << std::endl;
-    hexBoard.print();
-    
-    // Find best move for Player 1
-    auto bestMove = findBestMove(hexBoard, searchDepth, PLAYER1);
-    
-    std::cout << "Best move for Player 1: (" << bestMove.first << ", " << bestMove.second << ")" << std::endl;
-    
-    // Make the move
-    hexBoard.makeMove(bestMove.first, bestMove.second, PLAYER1);
-    
-    std::cout << "Board after move:" << std::endl;
-    hexBoard.print();
-    
-    return 0;
+    m.def("find_best_move", &findBestMove, 
+          py::arg("board"), py::arg("depth") = 3, py::arg("player") = Player::PLAYER1,
+          "Find the best move using alpha-beta pruning");
 }
