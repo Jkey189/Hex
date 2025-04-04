@@ -357,12 +357,11 @@ class HexBoard(QWidget):
                 winner = self.game.check_winner()
                 if winner:
                     winner_name = 'Blue' if winner == 1 else 'Red'
-                    win_direction = 'top to bottom' if winner == 1 else 'left to right'
                     from PyQt5.QtWidgets import QMessageBox
                     msg = QMessageBox()
                     msg.setWindowTitle("Game Over")
-                    msg.setText(f"{winner_name} has won by connecting {win_direction}!")
-                    msg.setInformativeText("Remember: The line doesn't need to be straight, and corner cells can be used by either player.")
+                    msg.setText(f"{winner_name} has won the game by connecting their borders!")
+                    msg.setInformativeText("Click 'New Game' to play again.")
                     msg.setIcon(QMessageBox.Information)
                     msg.exec_()
                     
@@ -392,14 +391,72 @@ class HexBoard(QWidget):
             
             painter.drawText(int(x), int(y), str(self.game.row_labels[row]))
 
+    def ai_move(self):
+        """Make an AI move using the alpha-beta algorithm"""
+        # Don't allow AI moves if game is over
+        if self.game.game_over:
+            return
+        
+        # Get AI difficulty from parent
+        ai_depth = 3  # Default difficulty
+        if hasattr(self.parent(), "get_ai_depth"):
+            ai_depth = self.parent().get_ai_depth()
+            
+        # Check for swap opportunity on second move
+        if self.game.move_count == 1 and not self.game.is_black_turn:
+            # AI might choose to swap based on first move position
+            row, col = self.game.first_move
+            # If first move is central or advantageous, swap it
+            center = self.game.size // 2
+            if abs(row - center) <= 1 and abs(col - center) <= 1:
+                if self.game.swap_move():
+                    self.update()
+                    if hasattr(self.parent(), "update_moves_list"):
+                        self.parent().update_moves_list()
+                    if hasattr(self.parent(), "update_swap_button"):
+                        self.parent().update_swap_button()
+                    return
+        
+        # Use AI to find the best move
+        state = self.game.to_python_state()
+        best_move = hex_ai_ai.find_best_move(state, depth=ai_depth)
+        
+        # Make the move if valid
+        if best_move[0] >= 0 and best_move[1] >= 0:
+            self.game.make_move(best_move[0], best_move[1])
+            self.update()
+            
+            # Update UI
+            if hasattr(self.parent(), "update_moves_list"):
+                self.parent().update_moves_list()
+            if hasattr(self.parent(), "update_swap_button"):
+                self.parent().update_swap_button()
+            
+            # Check for winner after AI move
+            winner = self.game.check_winner()
+            if winner:
+                winner_name = 'Blue' if winner == 1 else 'Red'
+                from PyQt5.QtWidgets import QMessageBox
+                msg = QMessageBox()
+                msg.setWindowTitle("Game Over")
+                msg.setText(f"{winner_name} has won the game by connecting their borders!")
+                msg.setInformativeText("Click 'New Game' to play again.")
+                msg.setIcon(QMessageBox.Information)
+                msg.exec_()
+                
+                # Update game status in parent window
+                if hasattr(self.parent(), "update_game_status"):
+                    self.parent().update_game_status()
+
 # Main application window
 class HexWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Hex Game")
         self.game = HexGame(11)
+        self.ai_mode = False  # Default to 1v1 mode
         
-        self.setMinimumSize(QSize(1050, 600))
+        self.setMinimumSize(QSize(1050, 700))
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -416,7 +473,7 @@ class HexWindow(QMainWindow):
         controls_panel = QWidget()
         controls_layout = QFormLayout(controls_panel)
         
-        # Simplify the turn label text
+        # Turn label
         self.turn_label = QLabel("HEX")
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.turn_label.setAlignment(Qt.AlignCenter)
@@ -426,6 +483,26 @@ class HexWindow(QMainWindow):
         self.game_status = QLabel("")
         self.game_status.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.game_status)
+        
+        # Add mode toggle button
+        self.mode_button = QPushButton("Play vs AI")
+        self.mode_button.clicked.connect(self.toggle_game_mode)
+        controls_layout.addRow(self.mode_button)
+        
+        # AI difficulty control
+        self.difficulty_layout = QHBoxLayout()
+        self.difficulty_label = QLabel("AI Difficulty:")
+        self.difficulty_spinner = QSpinBox()
+        self.difficulty_spinner.setMinimum(1)
+        self.difficulty_spinner.setMaximum(4)
+        self.difficulty_spinner.setValue(3)
+        self.difficulty_layout.addWidget(self.difficulty_label)
+        self.difficulty_layout.addWidget(self.difficulty_spinner)
+        controls_layout.addRow(self.difficulty_layout)
+        
+        # Hide difficulty controls initially (1v1 mode)
+        self.difficulty_label.setVisible(False)
+        self.difficulty_spinner.setVisible(False)
         
         self.swap_button = QPushButton("Swap First Move")
         self.swap_button.clicked.connect(self.swap_player_move)
@@ -439,21 +516,15 @@ class HexWindow(QMainWindow):
         reset_button.clicked.connect(self.reset_game)
         left_layout.addWidget(reset_button)
         
-        mode_label = QLabel("Two Player Mode")
-        mode_label.setAlignment(Qt.AlignCenter)
-        mode_label.setStyleSheet("font-weight: bold;")
-        left_layout.addWidget(mode_label)
+        self.mode_label = QLabel("Two Player Mode")
+        self.mode_label.setAlignment(Qt.AlignCenter)
+        self.mode_label.setStyleSheet("font-weight: bold;")
+        left_layout.addWidget(self.mode_label)
         
-        # Update the rule description to explain corner hexagons
-        rules_label = QLabel("Blue: Connect top to bottom • Red: Connect left to right")
+        # Fix typo: "boarders" → "borders"
+        rules_label = QLabel("Blue: Connect blue borders • Red: Connect red borders")
         rules_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(rules_label)
-        
-        # Add additional information about corners
-        corner_label = QLabel("Corner cells belong to both players!")
-        corner_label.setAlignment(Qt.AlignCenter)
-        corner_label.setStyleSheet("font-style: italic;")
-        left_layout.addWidget(corner_label)
         
         main_layout.addWidget(left_panel)
         
@@ -508,14 +579,14 @@ class HexWindow(QMainWindow):
         # Update the label showing whose turn it is or game status
         if self.game.game_over:
             winner_name = 'Blue' if self.game.winner == 1 else 'Red'
-            self.turn_label.setText(f"Winner: {winner_name}")
+            self.turn_label.setText(f"{winner_name} Wins!")
             self.turn_label.setStyleSheet(f"font-weight: bold; color: {'blue' if self.game.winner == 1 else 'red'}; font-size: 14px;")
         else:
             if self.game.is_black_turn:
-                self.turn_label.setText("Current player: Blue")
+                self.turn_label.setText("Blue's Turn")
                 self.turn_label.setStyleSheet("font-weight: bold; color: blue;")
             else:
-                self.turn_label.setText("Current player: Red")
+                self.turn_label.setText("Red's Turn")
                 self.turn_label.setStyleSheet("font-weight: bold; color: red;")
 
     def update_game_status(self):
@@ -534,6 +605,10 @@ class HexWindow(QMainWindow):
             self.steps_list.addItem(move)
         self.steps_list.scrollToBottom()  # Auto-scroll to latest move
         self.update_turn_label()
+        
+        # If in AI mode and it's AI's turn (Red always), make AI move
+        if self.ai_mode and not self.game.game_over and not self.game.is_black_turn:
+            self.board_widget.ai_move()
 
     def reset_game(self):
         # Start a new game using the reset method instead of creating a new object
@@ -542,9 +617,34 @@ class HexWindow(QMainWindow):
         self.board_widget.update()  # Redraw board
         self.steps_list.clear()  # Clear move history
         self.update_swap_button()  # Reset swap button
-        self.turn_label.setText("HEX")  # Simplified reset turn indicator
+        self.turn_label.setText("HEX")  # Reset turn indicator
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.game_status.setText("")  # Reset game status
+
+    def toggle_game_mode(self):
+        """Switch between 1v1 and AI mode"""
+        self.ai_mode = not self.ai_mode
+        
+        # Update button and label text
+        if self.ai_mode:
+            self.mode_button.setText("Play 1 vs 1")
+            self.mode_label.setText("Play vs AI Mode")
+            # Show AI difficulty controls
+            self.difficulty_label.setVisible(True)
+            self.difficulty_spinner.setVisible(True)
+        else:
+            self.mode_button.setText("Play vs AI")
+            self.mode_label.setText("Two Player Mode")
+            # Hide AI difficulty controls
+            self.difficulty_label.setVisible(False)
+            self.difficulty_spinner.setVisible(False)
+        
+        # Reset the game when changing mode
+        self.reset_game()
+    
+    def get_ai_depth(self):
+        """Return the current AI difficulty setting"""
+        return self.difficulty_spinner.value()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
