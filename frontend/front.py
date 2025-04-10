@@ -6,99 +6,84 @@ from PyQt5.QtGui import QPainter, QPolygonF, QColor, QPen, QFont
 from PyQt5.QtCore import Qt, QPointF, QSize
 import os
 
-# Add the parent directory to sys.path to allow imports across directories
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Now import the backend module
 from backend import back
 
-# Class representing the game state and logic
 class HexGame:
     def __init__(self, size):
-        self.size = size  # Size of the board (size x size)
-        self.board = [[0] * size for _ in range(size)]  # Game board: 0=empty, 1=blue, 2=red
-        self.is_black_turn = True  # True = Blue's turn, False = Red's turn
-        self.moves_history = []  # List to store move history
-        self.col_labels = "abcdefghijklmnopqrstuvwxyz"[:size]  # Column labels (a, b, c...)
-        self.row_labels = list(range(1, size + 1))  # Row labels (1, 2, 3...)
-        self.first_move = None  # Store first move for swap rule
-        self.move_count = 0  # Counter for tracking moves (for swap rule)
-        self.game_over = False  # Flag to indicate if game has ended
-        self.winner = None  # Store the winner (1 = Blue, 2 = Red)
-        self.board_states = []  # Store board states after each move
-        self.current_view_index = -1  # Current view index (-1 means latest move)
-        self.viewing_history = False  # Add flag to track if we're viewing history
+        self.size = size
+        self.board = [[0] * size for _ in range(size)]
+        self.is_black_turn = True
+        self.moves_history = []
+        self.col_labels = "abcdefghijklmnopqrstuvwxyz"[:size]
+        self.row_labels = list(range(1, size + 1))
+        self.first_move = None
+        self.move_count = 0
+        self.game_over = False
+        self.winner = None
+        self.board_states = []
+        self.current_view_index = -1
+        self.viewing_history = False
 
     def to_python_state(self):
-        # Convert game state to format used by AI
         state = back.HexState(self.size, self.is_black_turn)
-        state.board = [row[:] for row in self.board]  # Deep copy of board
+        state.board = [row[:] for row in self.board]
         return state
 
     def make_move(self, row, col):
-        # Don't allow moves if game is over
         if self.game_over:
             return False
 
-        # Place a piece on the board and update game state
-        if self.board[row][col] == 0:  # Cell must be empty
-            self.board[row][col] = 1 if self.is_black_turn else 2  # Place blue or red
+        if self.board[row][col] == 0:
+            self.board[row][col] = 1 if self.is_black_turn else 2
             player_color = "Blue" if self.is_black_turn else "Red"
-            # Record move with algebraic notation
             move = f"{player_color}: {self.col_labels[col]}{self.row_labels[row]}"
             self.moves_history.append(move)
             
-            # Update first move tracking for swap rule
             self.move_count += 1
             if self.move_count == 1:
                 self.first_move = (row, col)
                 
-            self.is_black_turn = not self.is_black_turn  # Switch turns
+            self.is_black_turn = not self.is_black_turn
             
-            # Save current board state
             self.board_states.append([row[:] for row in self.board])
-            self.current_view_index = -1  # Reset view index to latest move
+            self.current_view_index = -1
             
             return True
-        return False  # Move was invalid
+        return False
         
     def swap_move(self):
-        # Implement swap rule - second player can mirror first player's move
-        if self.move_count == 1 and not self.is_black_turn:  # Only valid as second move
-            # Mirror first move across diagonal
+        if self.move_count == 1 and not self.is_black_turn:
             row, col = self.first_move
             mirrored_row, mirrored_col = col, row
             
-            # Place red piece at mirrored position
-            self.board[mirrored_row][mirrored_col] = 2  # Red (second player)
+            self.board[mirrored_row][mirrored_col] = 2
             player_color = "Red"
             move = f"{player_color}: Swap ({self.col_labels[mirrored_col]}{self.row_labels[mirrored_row]})"
             self.moves_history.append(move)
             
             self.move_count += 1
-            self.is_black_turn = not self.is_black_turn  # Switch turns
+            self.is_black_turn = not self.is_black_turn
             
-            # Save current board state
             self.board_states.append([row[:] for row in self.board])
-            self.current_view_index = -1  # Reset view index to latest move
+            self.current_view_index = -1
             
             return True
-        return False  # Swap not allowed
+        return False
 
     def check_winner(self):
-        # Check if either player has won
         if back.check_win(self.board, 1):
             self.game_over = True
-            self.winner = 1  # Blue wins
+            self.winner = 1
             return 1
         elif back.check_win(self.board, 2):
             self.game_over = True
-            self.winner = 2  # Red wins 
+            self.winner = 2
             return 2
         return None
 
     def reset(self):
-        # Reset the game state
         self.board = [[0] * self.size for _ in range(self.size)]
         self.is_black_turn = True
         self.moves_history = []
@@ -106,11 +91,10 @@ class HexGame:
         self.move_count = 0
         self.game_over = False
         self.winner = None
-        self.board_states = []  # Clear board states history
-        self.current_view_index = -1  # Reset view index
-        self.viewing_history = False  # Add flag to track if we're viewing history
+        self.board_states = []
+        self.current_view_index = -1
+        self.viewing_history = False
 
-# Widget to display and interact with the game board
 class HexBoard(QWidget):
     def __init__(self, game, parent=None):
         super().__init__(parent)
@@ -125,7 +109,6 @@ class HexBoard(QWidget):
         self.setMinimumSize(int(width), int(height))
     
     def paintEvent(self, event):
-        # Draw the game board and pieces
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
@@ -156,7 +139,6 @@ class HexBoard(QWidget):
         self.draw_labels(painter, widget_center_x, widget_center_y, hex_width, hex_height)
 
     def draw_precise_zigzag_border(self, painter, widget_center_x, widget_center_y):
-        # Draw zigzag borders for the game board
         hex_width = 2 * self.cell_size
         hex_height = 2 * self.cell_size * math.sin(math.pi/3)
         size = self.game.size
@@ -292,7 +274,6 @@ class HexBoard(QWidget):
         self.draw_player_labels(painter, widget_center_x, widget_center_y, hex_width, hex_height, size)
     
     def draw_player_labels(self, painter, widget_center_x, widget_center_y, hex_width, hex_height, size):
-        # Draw player labels on the board
         x = widget_center_x + (0) * (hex_width * 0.75)
         y = widget_center_y + (0 - size + 1) * (hex_height * 0.5)
         top_left = self.get_hex_vertices(x, y)[0]
@@ -310,7 +291,6 @@ class HexBoard(QWidget):
         bottom_left = self.get_hex_vertices(x, y)[4]
 
     def create_hexagon(self, x, y):
-        # Create a hexagon shape at given coordinates
         hexagon = QPolygonF()
         for i in range(6):
             angle_rad = math.pi / 3 * i
@@ -320,7 +300,6 @@ class HexBoard(QWidget):
         return hexagon
 
     def get_hex_vertices(self, x, y):
-        # Get vertices of a hexagon at given coordinates
         vertices = []
         for i in range(6):
             angle_rad = math.pi / 3 * i
@@ -330,50 +309,44 @@ class HexBoard(QWidget):
         return vertices
 
     def mousePressEvent(self, event):
-        # Don't process clicks if game is over or viewing history
         if self.game.game_over or self.game.viewing_history:
+            return
+            
+        if hasattr(self.parent(), "ai_mode") and self.parent().ai_mode and not self.game.is_black_turn:
             return
 
         widget_center_x = self.width() / 2
         widget_center_y = self.height() / 2 + 12
         
-        x, y = event.x(), event.y()  # Get mouse coordinates
+        x, y = event.x(), event.y()
         
-        # Find which hexagon was clicked
         closest_row, closest_col = -1, -1
         min_distance = float("inf")
         
-        # Check all cells to find closest
         for row in range(self.game.size):
             for col in range(self.game.size):
                 hex_width = 2 * self.cell_size
                 hex_height = 2 * self.cell_size * math.sin(math.pi/3)
                 
-                # Calculate center of this hex cell
                 hex_x = widget_center_x + (col - row) * (hex_width * 0.75)
                 hex_y = widget_center_y + (col + row - self.game.size + 1) * (hex_height * 0.5)
                 
-                # Calculate distance from click to hex center
                 distance = (x - hex_x) ** 2 + (y - hex_y) ** 2
                 
-                # Update closest if this is closer and within threshold
                 if distance < min_distance and distance < (self.cell_size ** 2 * 1.5):
                     min_distance = distance
                     closest_row, closest_col = row, col
         
-        # If we found a valid hex to click
         if closest_row >= 0 and closest_col >= 0:
             if self.game.make_move(closest_row, closest_col):
-                self.update()  # Redraw the board
+                self.update()
                 
-                # Update UI elements in parent window
                 if hasattr(self.parent(), "update_moves_list"):
                     self.parent().update_moves_list()
                 
                 if hasattr(self.parent(), "update_swap_button"):
                     self.parent().update_swap_button()
                 
-                # Check for winner
                 winner = self.game.check_winner()
                 if winner:
                     winner_name = "Blue" if winner == 1 else "Red"
@@ -385,12 +358,10 @@ class HexBoard(QWidget):
                     msg.setIcon(QMessageBox.Information)
                     msg.exec_()
                     
-                    # Update game status in parent window
                     if hasattr(self.parent(), "update_game_status"):
                         self.parent().update_game_status()
 
     def draw_labels(self, painter, widget_center_x, widget_center_y, hex_width, hex_height):
-        # Draw column and row labels on the board
         bold_font = QFont("Arial", 10)
         bold_font.setBold(True)
         painter.setFont(bold_font)
@@ -412,21 +383,15 @@ class HexBoard(QWidget):
             painter.drawText(int(x), int(y), str(self.game.row_labels[row]))
 
     def ai_move(self):
-        """Make an AI move using the alpha-beta algorithm"""
-        # Don't allow AI moves if game is over
         if self.game.game_over:
             return
         
-        # Get AI difficulty from parent
-        ai_depth = 3  # Default difficulty
+        ai_depth = 3
         if hasattr(self.parent(), "get_ai_depth"):
             ai_depth = self.parent().get_ai_depth()
             
-        # Check for swap opportunity on second move
         if self.game.move_count == 1 and not self.game.is_black_turn:
-            # AI might choose to swap based on first move position
             row, col = self.game.first_move
-            # If first move is central or advantageous, swap it
             center = self.game.size // 2
             if abs(row - center) <= 1 and abs(col - center) <= 1:
                 if self.game.swap_move():
@@ -437,22 +402,18 @@ class HexBoard(QWidget):
                         self.parent().update_swap_button()
                     return
         
-        # Use AI to find the best move
         state = self.game.to_python_state()
         best_move = back.find_best_move(state, depth=ai_depth)
         
-        # Make the move if valid
         if best_move[0] >= 0 and best_move[1] >= 0:
             self.game.make_move(best_move[0], best_move[1])
             self.update()
             
-            # Update UI
             if hasattr(self.parent(), "update_moves_list"):
                 self.parent().update_moves_list()
             if hasattr(self.parent(), "update_swap_button"):
                 self.parent().update_swap_button()
             
-            # Check for winner after AI move
             winner = self.game.check_winner()
             if winner:
                 winner_name = "Blue" if winner == 1 else "Red"
@@ -464,17 +425,15 @@ class HexBoard(QWidget):
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
                 
-                # Update game status in parent window
                 if hasattr(self.parent(), "update_game_status"):
                     self.parent().update_game_status()
 
-# Main application window
 class HexWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Hex Game")
         self.game = HexGame(11)
-        self.ai_mode = False  # Default to 1v1 mode
+        self.ai_mode = False
         
         self.setMinimumSize(QSize(1050, 700))
 
@@ -493,34 +452,31 @@ class HexWindow(QMainWindow):
         controls_panel = QWidget()
         controls_layout = QFormLayout(controls_panel)
         
-        # Turn label
         self.turn_label = QLabel("HEX")
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.turn_label.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.turn_label)
         
-        # Add game status label
         self.game_status = QLabel("")
         self.game_status.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.game_status)
         
-        # Add mode toggle button
         self.mode_button = QPushButton("Play vs AI")
         self.mode_button.clicked.connect(self.toggle_game_mode)
         controls_layout.addRow(self.mode_button)
         
-        # AI difficulty control
         self.difficulty_layout = QHBoxLayout()
         self.difficulty_label = QLabel("AI Difficulty:")
         self.difficulty_spinner = QSpinBox()
         self.difficulty_spinner.setMinimum(1)
         self.difficulty_spinner.setMaximum(4)
         self.difficulty_spinner.setValue(3)
+        self.current_ai_depth = 3
+        self.difficulty_spinner.valueChanged.connect(self.on_difficulty_changed)
         self.difficulty_layout.addWidget(self.difficulty_label)
         self.difficulty_layout.addWidget(self.difficulty_spinner)
         controls_layout.addRow(self.difficulty_layout)
         
-        # Hide difficulty controls initially (1v1 mode)
         self.difficulty_label.setVisible(False)
         self.difficulty_spinner.setVisible(False)
         
@@ -541,7 +497,6 @@ class HexWindow(QMainWindow):
         self.mode_label.setStyleSheet("font-weight: bold;")
         left_layout.addWidget(self.mode_label)
         
-        # Fix typo: "boarders" → "borders"
         rules_label = QLabel("Blue: Connect blue borders • Red: Connect red borders")
         rules_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(rules_label)
@@ -557,22 +512,20 @@ class HexWindow(QMainWindow):
         self.steps_list = QListWidget()
         right_layout.addWidget(self.steps_list)
         
-        # Add move history navigation buttons
         nav_buttons_layout = QHBoxLayout()
         
         self.prev_move_button = QPushButton("Previous Move")
         self.prev_move_button.clicked.connect(self.show_previous_move)
-        self.prev_move_button.setEnabled(True)  # Disabled initially
+        self.prev_move_button.setEnabled(True)
         nav_buttons_layout.addWidget(self.prev_move_button)
         
         self.next_move_button = QPushButton("Next Move")
         self.next_move_button.clicked.connect(self.show_next_move)
-        self.next_move_button.setEnabled(True)  # Disabled initially
+        self.next_move_button.setEnabled(True)
         nav_buttons_layout.addWidget(self.next_move_button)
         
         right_layout.addLayout(nav_buttons_layout)
         
-        # Add current view label
         self.view_label = QLabel("Current view: Latest move")
         self.view_label.setAlignment(Qt.AlignCenter)
         right_layout.addWidget(self.view_label)
@@ -583,21 +536,17 @@ class HexWindow(QMainWindow):
         main_layout.setStretch(1, 3)
 
     def swap_player_move(self):
-        # Don't allow swap if game is over
         if self.game.game_over:
             return
             
-        # Handle swap button click
         if self.game.swap_move():
-            self.board_widget.update()  # Redraw the board
-            self.update_moves_list()  # Update move history
-            self.update_swap_button()  # Update button visibility
+            self.board_widget.update()
+            self.update_moves_list()
+            self.update_swap_button()
             
-            # Check for winner after swap
             winner = self.game.check_winner()
             if winner:
                 winner_name = "Blue" if winner == 1 else "Red"
-                # Make win message consistent with regular moves
                 from PyQt5.QtWidgets import QMessageBox
                 msg = QMessageBox()
                 msg.setWindowTitle("Game Over")
@@ -606,17 +555,14 @@ class HexWindow(QMainWindow):
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
                 
-                # Update game status in parent window
                 self.update_game_status()
     
     def update_swap_button(self):
-        # Show swap button only when it can be used (after first move, on red's turn)
-        can_swap = self.game.move_count == 1 and not self.game.is_black_turn
+        can_swap = self.game.move_count == 1 and not self.game.is_black_turn and not self.ai_mode
         self.swap_button.setVisible(can_swap)
         self.update_turn_label()
     
     def update_turn_label(self):
-        # Update the label showing whose turn it is or game status
         if self.game.game_over:
             winner_name = "Blue" if self.game.winner == 1 else "Red"
             self.turn_label.setText(f"{winner_name} Wins!")
@@ -630,7 +576,6 @@ class HexWindow(QMainWindow):
                 self.turn_label.setStyleSheet("font-weight: bold; color: red;")
 
     def update_game_status(self):
-        # Update game status message
         if self.game.game_over:
             winner_color = "blue" if self.game.winner == 1 else "red"
             self.game_status.setText("Game Over")
@@ -639,104 +584,114 @@ class HexWindow(QMainWindow):
             self.game_status.setText("")
 
     def update_moves_list(self):
-        # Update the move history list in the UI
         self.steps_list.clear()
         
-        # Use custom colored display for each move
         from PyQt5.QtWidgets import QListWidgetItem
         from PyQt5.QtGui import QColor
         
         for move_idx, move in enumerate(self.game.moves_history):
             item = QListWidgetItem()
             
-            # Format: "#1 Blue: a1" or "#2 Red: b2" or "#2 Red: Swap (b1)"
             move_num = move_idx + 1
             
             if "Blue" in move:
                 text = f"#{move_num} {move}"
                 item.setForeground(QColor("blue"))
-            else:  # Red player
+            else:
                 text = f"#{move_num} {move}"
                 item.setForeground(QColor("red"))
                 
             item.setText(text)
             self.steps_list.addItem(item)
             
-        self.steps_list.scrollToBottom()  # Auto-scroll to latest move
+        self.steps_list.scrollToBottom()
         self.update_turn_label()
         
-        # If in AI mode and it's AI's turn (Red always), make AI move
         if self.ai_mode and not self.game.game_over and not self.game.is_black_turn:
             self.board_widget.ai_move()
 
     def reset_game(self):
-        # Start a new game using the reset method instead of creating a new object
-        self.game.reset()  # Use the reset method
+        self.game.reset()
         self.board_widget.game = self.game
-        self.board_widget.update()  # Redraw board
-        self.steps_list.clear()  # Clear move history
-        self.update_swap_button()  # Reset swap button
-        self.turn_label.setText("HEX")  # Reset turn indicator
+        self.board_widget.update()
+        self.steps_list.clear()
+        self.update_swap_button()
+        self.turn_label.setText("HEX")
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
-        self.game_status.setText("")  # Reset game status
+        self.game_status.setText("")
+        
+        if self.ai_mode:
+            self.difficulty_spinner.setEnabled(True)
+            
+            if not self.game.is_black_turn:
+                self.board_widget.ai_move()
 
     def toggle_game_mode(self):
-        """Switch between 1v1 and AI mode"""
         self.ai_mode = not self.ai_mode
         
-        # Update button and label text
         if self.ai_mode:
             self.mode_button.setText("Play 1 vs 1")
             self.mode_label.setText("Play vs AI Mode")
-            # Show AI difficulty controls
             self.difficulty_label.setVisible(True)
             self.difficulty_spinner.setVisible(True)
+            self.difficulty_spinner.setEnabled(True)
         else:
             self.mode_button.setText("Play vs AI")
             self.mode_label.setText("Two Player Mode")
-            # Hide AI difficulty controls
             self.difficulty_label.setVisible(False)
             self.difficulty_spinner.setVisible(False)
         
-        # Reset the game when changing mode
         self.reset_game()
     
     def get_ai_depth(self):
-        """Return the current AI difficulty setting"""
-        return self.difficulty_spinner.value()
+        return self.current_ai_depth
+
+    def on_difficulty_changed(self, new_value):
+        if len(self.game.moves_history) > 0:
+            from PyQt5.QtWidgets import QMessageBox
+            msg_box = QMessageBox()
+            msg_box.setWindowTitle("Change Difficulty")
+            msg_box.setText(f"Changing AI difficulty requires starting a new game.")
+            msg_box.setInformativeText(f"Do you want to start a new game with difficulty level {new_value}?")
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
+            
+            response = msg_box.exec_()
+            
+            if response == QMessageBox.Yes:
+                self.current_ai_depth = new_value
+                self.reset_game()
+            else:
+                self.difficulty_spinner.blockSignals(True)
+                self.difficulty_spinner.setValue(self.current_ai_depth)
+                self.difficulty_spinner.blockSignals(False)
+        else:
+            self.current_ai_depth = new_value
 
     def show_previous_move(self):
-        """Navigate to the previous move in history"""
         if not self.game.board_states:
             return
             
-        # If we're at the latest move (current_view_index == -1), 
-        # then start from the last board state
         if self.game.current_view_index == -1:
             self.game.current_view_index = len(self.game.board_states) - 1
             
         if self.game.current_view_index > 0:
             self.game.current_view_index -= 1
-            # Copy the board state from history
             self.game.board = [row[:] for row in self.game.board_states[self.game.current_view_index]]
             self.board_widget.update()
-            # Enable history viewing mode
             self.game.viewing_history = True
             self.update_navigation_buttons()
             self.steps_list.setCurrentRow(self.game.current_view_index)
             
     def show_next_move(self):
-        """Navigate to the next move in history"""
         if not self.game.board_states:
             return
             
         if self.game.current_view_index < len(self.game.board_states) - 1:
             self.game.current_view_index += 1
-            # Copy the board state from history
             self.game.board = [row[:] for row in self.game.board_states[self.game.current_view_index]]
             self.board_widget.update()
             
-            # If we've reached the latest move, exit history viewing mode
             if self.game.current_view_index == len(self.game.board_states) - 1:
                 self.game.viewing_history = False
                 self.game.current_view_index = -1
@@ -745,27 +700,22 @@ class HexWindow(QMainWindow):
             self.steps_list.setCurrentRow(self.game.current_view_index)
 
     def update_navigation_buttons(self):
-        """Update the state of navigation buttons"""
         if not self.game.board_states:
-            # No moves yet
             self.prev_move_button.setEnabled(False)
             self.next_move_button.setEnabled(False)
             self.view_label.setText("Current view: No moves yet")
             return
             
         if self.game.current_view_index == -1:
-            # At latest move
             self.prev_move_button.setEnabled(len(self.game.board_states) > 0)
             self.next_move_button.setEnabled(False)
             self.view_label.setText("Current view: Latest move")
         else:
-            # Viewing history
             self.prev_move_button.setEnabled(self.game.current_view_index > 0)
             self.next_move_button.setEnabled(self.game.current_view_index < len(self.game.board_states) - 1)
             move_num = self.game.current_view_index + 1
             self.view_label.setText(f"Current view: Move #{move_num}")
             
-            # Highlight the current move in the list
             self.steps_list.setCurrentRow(self.game.current_view_index)
 
 if __name__ == "__main__":
