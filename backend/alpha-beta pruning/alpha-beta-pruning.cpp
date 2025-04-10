@@ -21,8 +21,9 @@ private:
     std::vector<int> rank;
     
     int find(int x) {
-        if (parent[x] != x)
+        if (parent[x] != x){
             parent[x] = find(parent[x]);
+        }
         return parent[x];
     }
     
@@ -32,10 +33,12 @@ private:
         
         if (rootX == rootY) return;
         
-        if (rank[rootX] < rank[rootY])
+        if (rank[rootX] < rank[rootY]){
             parent[rootX] = rootY;
-        else if (rank[rootX] > rank[rootY])
+        }
+        else if (rank[rootX] > rank[rootY]){
             parent[rootY] = rootX;
+        }
         else {
             parent[rootY] = rootX;
             rank[rootX]++;
@@ -78,7 +81,9 @@ private:
         if (player == PLAYER1) {
             // Check if any top cell is connected to any bottom cell
             for (int j = 0; j < size; j++) {
-                if (board[0][j] != PLAYER1) continue;
+                if (board[0][j] != PLAYER1) {
+                    continue;
+                }
                 
                 for (int k = 0; k < size; k++) {
                     if (board[size-1][k] == PLAYER1 && 
@@ -90,7 +95,9 @@ private:
         } else { // PLAYER2
             // Check if any left cell is connected to any right cell
             for (int i = 0; i < size; i++) {
-                if (board[i][0] != PLAYER2) continue;
+                if (board[i][0] != PLAYER2) {
+                    continue;
+                }
                 
                 for (int k = 0; k < size; k++) {
                     if (board[k][size-1] == PLAYER2 && 
