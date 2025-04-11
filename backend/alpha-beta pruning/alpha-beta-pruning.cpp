@@ -1,3 +1,7 @@
+// File: alpha-beta-pruning.cpp
+// Implementation of Hex game AI using alpha-beta pruning algorithm with various optimizations
+// including transposition table and move ordering
+
 #include <iostream>
 #include <vector>
 #include <algorithm>
@@ -12,8 +16,10 @@
 
 namespace py = pybind11;
 
+// Player enum represents the state of a cell on the board
 enum Player { EMPTY = 0, PLAYER1 = 1, PLAYER2 = 2 };
 
+// Hash function for the board state to use in transposition table
 struct BoardHash {
     std::size_t operator()(const std::vector<std::vector<int>>& board) const {
         std::size_t seed = board.size();
@@ -26,12 +32,14 @@ struct BoardHash {
     }
 };
 
+// Transposition table entry to cache search results
 struct TTEntry {
-    int depth;
-    int value;
-    int flag;
+    int depth;      // Depth of the search
+    int value;      // Evaluation value
+    int flag;       // Flag for the type of node (0=exact, 1=lower bound, 2=upper bound)
 };
 
+// Global transposition table to cache search results for positions already evaluated
 std::unordered_map<std::vector<std::vector<int>>, TTEntry, BoardHash> transpositionTable;
 
 class HexBoard {
