@@ -273,6 +273,11 @@ public:
             return 10000;
         }
         
+        // Check if the move would be redundant (connecting already connected pieces)
+        if (isRedundantMove(row, col, player)) {
+            score -= 15;  // Penalize redundant moves
+        }
+        
         int centerDist = std::abs(row - size/2) + std::abs(col - size/2);
         score += (size - centerDist);
         
@@ -343,6 +348,48 @@ public:
         }
         
         return score;
+    }
+    
+    bool isRedundantMove(int row, int col, Player player) const {
+        // This function checks if placing a piece at (row, col) would
+        // create a redundant connection (i.e., connecting pieces that
+        // are already connected through another path)
+        
+        static const int dx[] = {-1, -1, 0, 0, 1, 1};
+        static const int dy[] = {0, 1, -1, 1, -1, 0};
+        
+        // Find all adjacent cells that have player's pieces
+        std::vector<std::pair<int, int>> adjacentPlayerCells;
+        for (int k = 0; k < 6; k++) {
+            int nr = row + dx[k];
+            int nc = col + dy[k];
+            
+            if (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] == player) {
+                adjacentPlayerCells.push_back({nr, nc});
+            }
+        }
+        
+        // If there are fewer than 2 adjacent player pieces, it's not redundant
+        if (adjacentPlayerCells.size() < 2) {
+            return false;
+        }
+        
+        // Check if any pair of adjacent player cells are already connected
+        for (size_t i = 0; i < adjacentPlayerCells.size(); i++) {
+            for (size_t j = i + 1; j < adjacentPlayerCells.size(); j++) {
+                int r1 = adjacentPlayerCells[i].first;
+                int c1 = adjacentPlayerCells[i].second;
+                int r2 = adjacentPlayerCells[j].first;
+                int c2 = adjacentPlayerCells[j].second;
+                
+                // Check if there's already a path connecting these two cells
+                if (hasVirtualConnection(r1, c1, r2, c2, player)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
     
     std::vector<std::pair<int, int>> getEmptyCells() const {
@@ -562,6 +609,16 @@ public:
 int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPlayer, 
               Player currentPlayer, bool useCache = true) {
     
+    // Check for immediate win/loss before using the transposition table
+    if (board.checkWin(currentPlayer)) {
+        return 1000;
+    }
+    
+    Player opponent = (currentPlayer == PLAYER1) ? PLAYER2 : PLAYER1;
+    if (board.checkWin(opponent)) {
+        return -1000;
+    }
+    
     if (useCache) {
         std::vector<std::vector<int>> boardState = board.getBoard();
         
@@ -582,7 +639,7 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         }
     }
     
-    if (depth == 0 || board.isGameOver()) {
+    if (depth == 0) {
         return board.evaluate(currentPlayer);
     }
     
@@ -595,6 +652,11 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         possibleMoves = board.getOrderedMoves(opponent);
     }
     
+    // If no moves available, return evaluation
+    if (possibleMoves.empty()) {
+        return board.evaluate(currentPlayer);
+    }
+    
     int originalAlpha = alpha;
     int value;
     int flag = 0;
@@ -603,6 +665,13 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         value = INT_MIN;
         for (const auto& move : possibleMoves) {
             board.makeMove(move.first, move.second, currentPlayer);
+            
+            // Check for immediate win after move
+            if (board.checkWin(currentPlayer)) {
+                board.undoMove(move.first, move.second);
+                return 1000;
+            }
+            
             int childValue = alphabeta(board, depth - 1, alpha, beta, false, currentPlayer, useCache);
             board.undoMove(move.first, move.second);
             
@@ -610,16 +679,16 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
             alpha = std::max(alpha, value);
             
             if (alpha >= beta) {
-                break;
+                break;  // Beta cutoff
             }
         }
         
         if (value <= originalAlpha) {
-            flag = 2;
+            flag = 2;  // Upper bound
         } else if (value >= beta) {
-            flag = 1;
+            flag = 1;  // Lower bound
         } else {
-            flag = 0;
+            flag = 0;  // Exact value
         }
     } else {
         value = INT_MAX;
@@ -627,6 +696,13 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         
         for (const auto& move : possibleMoves) {
             board.makeMove(move.first, move.second, opponent);
+            
+            // Check for immediate loss after opponent's move
+            if (board.checkWin(opponent)) {
+                board.undoMove(move.first, move.second);
+                return -1000;
+            }
+            
             int childValue = alphabeta(board, depth - 1, alpha, beta, true, currentPlayer, useCache);
             board.undoMove(move.first, move.second);
             
@@ -634,19 +710,20 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
             beta = std::min(beta, value);
             
             if (beta <= alpha) {
-                break;
+                break;  // Alpha cutoff
             }
         }
         
         if (value <= originalAlpha) {
-            flag = 2;
+            flag = 2;  // Upper bound
         } else if (value >= beta) {
-            flag = 1;
+            flag = 1;  // Lower bound
         } else {
-            flag = 0;
+            flag = 0;  // Exact value
         }
     }
     
+    // Store the result in the transposition table
     if (useCache) {
         std::vector<std::vector<int>> boardState = board.getBoard();
         transpositionTable[boardState] = {depth, value, flag};
@@ -656,32 +733,78 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
 }
 
 std::pair<int, int> findBestMove(HexBoard& board, int maxDepth, Player player) {
+    // Clear the transposition table at the start of a new search
     transpositionTable.clear();
     
     std::pair<int, int> bestMove = {-1, -1};
     
+    // First, check for any immediate winning moves
     std::vector<std::pair<int, int>> possibleMoves = board.getOrderedMoves(player);
     for (const auto& move : possibleMoves) {
         board.makeMove(move.first, move.second, player);
         if (board.checkWin(player)) {
             board.undoMove(move.first, move.second);
+            return move;  // Return immediately if we found a winning move
+        }
+        board.undoMove(move.first, move.second);
+    }
+    
+    // Next, check if opponent has any immediate winning moves and block them
+    Player opponent = (player == PLAYER1) ? PLAYER2 : PLAYER1;
+    for (const auto& move : possibleMoves) {
+        board.makeMove(move.first, move.second, opponent);
+        if (board.checkWin(opponent)) {
+            board.undoMove(move.first, move.second);
+            // This move would be a win for the opponent, so we should block it
             return move;
         }
         board.undoMove(move.first, move.second);
     }
     
+    // If it's an empty board, just play near the center
+    bool emptyBoard = true;
+    for (int i = 0; i < board.getSize(); i++) {
+        for (int j = 0; j < board.getSize(); j++) {
+            if (board.getBoard()[i][j] != 0) {
+                emptyBoard = false;
+                break;
+            }
+        }
+        if (!emptyBoard) break;
+    }
+    
+    if (emptyBoard) {
+        int center = board.getSize() / 2;
+        return {center, center};
+    }
+    
+    // Iterative deepening: start with shallow searches and go deeper
     for (int currentDepth = 1; currentDepth <= maxDepth; currentDepth++) {
         int bestValue = INT_MIN;
         std::pair<int, int> tempBestMove = {-1, -1};
         
+        // Use a narrowing window for alpha-beta
+        int alpha = INT_MIN;
+        int beta = INT_MAX;
+        
         for (const auto& move : possibleMoves) {
             board.makeMove(move.first, move.second, player);
-            int moveValue = alphabeta(board, currentDepth - 1, INT_MIN, INT_MAX, false, player);
+            
+            // Early exit if this move is a win
+            if (board.checkWin(player)) {
+                board.undoMove(move.first, move.second);
+                return move;
+            }
+            
+            int moveValue = alphabeta(board, currentDepth - 1, alpha, beta, false, player, true);
             board.undoMove(move.first, move.second);
             
             if (moveValue > bestValue) {
                 bestValue = moveValue;
                 tempBestMove = move;
+                
+                // Update alpha to enable better pruning
+                alpha = std::max(alpha, bestValue);
             }
         }
         
@@ -689,9 +812,16 @@ std::pair<int, int> findBestMove(HexBoard& board, int maxDepth, Player player) {
             bestMove = tempBestMove;
         }
         
+        // Exit early if we found a winning move sequence
         if (bestValue >= 900) {
             break;
         }
+    }
+    
+    // If we still don't have a move, pick a random valid one
+    if (bestMove.first == -1 && !possibleMoves.empty()) {
+        int randomIndex = rand() % possibleMoves.size();
+        bestMove = possibleMoves[randomIndex];
     }
     
     return bestMove;

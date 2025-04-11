@@ -1,13 +1,27 @@
-import sys, copy, random
+import sys, copy, random, os
 from collections import deque
 
+# Add the correct path to search for the module
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# First, try to import the module using its file name directly
 try:
-    import hex_cpp
+    import alpha_beta_pruning as hex_cpp
     USE_CPP_IMPLEMENTATION = True
     print("Using C++ alpha-beta pruning implementation")
 except ImportError:
-    USE_CPP_IMPLEMENTATION = False
-    print("C++ implementation not found, using Python implementation")
+    # If that fails, try to import using the original name
+    try:
+        import hex_cpp
+        USE_CPP_IMPLEMENTATION = True
+        print("Using C++ alpha-beta pruning implementation")
+    except ImportError:
+        # If both fail, use Python implementation
+        USE_CPP_IMPLEMENTATION = False
+        print("C++ implementation not found, using Python implementation")
+
+# Define constants for the six directions on a hexagonal grid
+DIRECTIONS = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]
 
 class HexState:
     """
@@ -30,9 +44,6 @@ class HexState:
         return new_state
 
 if not USE_CPP_IMPLEMENTATION:
-    # Constants for the six directions on a hexagonal grid
-    DIRECTIONS = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]
-    
     def evaluate(state):
         """
         Evaluates the current state of the game.
@@ -96,18 +107,24 @@ if not USE_CPP_IMPLEMENTATION:
         """
         Checks if the given player has a winning path on the board.
         A winning path connects one side of the board to the opposite side.
+        Player 1 (Blue): Connect top to bottom
+        Player 2 (Red): Connect left to right
         """
         size = len(board)
         visited = [[False for _ in range(size)] for _ in range(size)]
         
-        if player == 1:
+        if player == 1:  # Blue player - connect top to bottom
+            # Start from top row cells that contain player's piece
             for col in range(size):
-                if (board[0][col] == player or (col == 0 or col == size-1)) and not visited[0][col]:
+                if board[0][col] == player and not visited[0][col]:
+                    # Use DFS to check if there's a path to bottom row
                     if dfs_path(board, 0, col, player, visited, 1):
                         return True
-        else:
+        else:  # Red player - connect left to right
+            # Start from leftmost column cells that contain player's piece
             for row in range(size):
-                if (board[row][0] == player or (row == 0 or row == size-1)) and not visited[row][0]:
+                if board[row][0] == player and not visited[row][0]:
+                    # Use DFS to check if there's a path to rightmost column
                     if dfs_path(board, row, 0, player, visited, 2):
                         return True
         
@@ -116,25 +133,30 @@ if not USE_CPP_IMPLEMENTATION:
     def dfs_path(board, row, col, player, visited, direction):
         """
         Depth-first search to determine if a winning path exists for the given player.
+        direction=1: Check for path from top to bottom (Blue player)
+        direction=2: Check for path from left to right (Red player)
         """
         size = len(board)
         
-        if direction == 1 and row == size - 1:
-            return board[row][col] == player or col == 0 or col == size-1
-        elif direction == 2 and col == size - 1:
-            return board[row][col] == player or row == 0 or row == size-1
+        # Check if we've reached the destination edge
+        if direction == 1 and row == size - 1:  # Bottom row for Blue
+            return board[row][col] == player
+        elif direction == 2 and col == size - 1:  # Right column for Red
+            return board[row][col] == player
             
-        if board[row][col] != player and not ((row == 0 or row == size-1) and (col == 0 or col == size-1)):
+        # Current cell must belong to the player
+        if board[row][col] != player:
             return False
             
         visited[row][col] = True
         
+        # Check all six adjacent cells in hexagonal grid
         for dr, dc in DIRECTIONS:
             nr, nc = row + dr, col + dc
-            if 0 <= nr < size and 0 <= nc < size and not visited[nr][nc]:
-                if board[nr][nc] == player or ((nr == 0 or nr == size-1) and (nc == 0 or nc == size-1)):
-                    if dfs_path(board, nr, nc, player, visited, direction):
-                        return True
+            if (0 <= nr < size and 0 <= nc < size and 
+                not visited[nr][nc] and board[nr][nc] == player):
+                if dfs_path(board, nr, nc, player, visited, direction):
+                    return True
         
         return False
     
@@ -245,8 +267,72 @@ if not USE_CPP_IMPLEMENTATION:
         
         center_score = (player_center_control - opponent_center_control) * 2
         
+        # Avoid redundant moves
+        redundant_moves_penalty = 0
+        for r in range(size):
+            for c in range(size):
+                if board[r][c] == 0 and is_redundant_move(board, r, c, player):
+                    redundant_moves_penalty -= 5
+        
         # Combine scores with weights
-        return score * 10 + path_score * 30 + center_score * 20
+        return score * 10 + path_score * 30 + center_score * 20 + redundant_moves_penalty
+
+    def is_redundant_move(board, row, col, player):
+        """
+        Checks if placing a piece at (row, col) would create a redundant connection
+        (i.e., connecting pieces that are already connected through another path)
+        """
+        size = len(board)
+        
+        # Find adjacent player cells
+        adjacent_player_cells = []
+        for dr, dc in DIRECTIONS:
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < size and 0 <= nc < size and board[nr][nc] == player:
+                adjacent_player_cells.append((nr, nc))
+        
+        # If there are fewer than 2 adjacent player pieces, it's not redundant
+        if len(adjacent_player_cells) < 2:
+            return False
+        
+        # Check if any pair of adjacent player cells are already connected
+        for i in range(len(adjacent_player_cells)):
+            for j in range(i + 1, len(adjacent_player_cells)):
+                r1, c1 = adjacent_player_cells[i]
+                r2, c2 = adjacent_player_cells[j]
+                
+                # Check if there's a path connecting these cells
+                # Create a temporary board without the empty cell we're evaluating
+                temp_board = [row[:] for row in board]
+                if has_connection(temp_board, r1, c1, r2, c2, player):
+                    return True
+        
+        return False
+    
+    def has_connection(board, start_row, start_col, end_row, end_col, player):
+        """
+        Checks if there's a path of the player's pieces from (start_row, start_col)
+        to (end_row, end_col)
+        """
+        size = len(board)
+        visited = [[False for _ in range(size)] for _ in range(size)]
+        
+        def dfs(r, c):
+            if r == end_row and c == end_col:
+                return True
+                
+            visited[r][c] = True
+            
+            for dr, dc in DIRECTIONS:
+                nr, nc = r + dr, c + dc
+                if (0 <= nr < size and 0 <= nc < size and 
+                    board[nr][nc] == player and not visited[nr][nc]):
+                    if dfs(nr, nc):
+                        return True
+            
+            return False
+        
+        return dfs(start_row, start_col)
 
     def shortest_path_distance(board, player):
         """

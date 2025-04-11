@@ -69,7 +69,12 @@ class HexGame:
         
         self.board[row][col] = 1 if self.is_black_turn else 2
         player_color = "Blue" if self.is_black_turn else "Red"
-        self.moves_history.append(f"{player_color}: {self.col_labels[col]}{self.row_labels[row]}")
+        move_notation = f"{self.col_labels[col]}{self.row_labels[row]}"
+        self.moves_history.append(f"{player_color}: {move_notation}")
+        
+        # Print the move to console
+        lowercase_color = player_color.lower()
+        print(f"{move_notation} - {lowercase_color}")
         
         self.move_count += 1
         if self.move_count == 1: self.first_move = (row, col)
@@ -94,7 +99,11 @@ class HexGame:
         mirrored_row, mirrored_col = col, row
         
         self.board[mirrored_row][mirrored_col] = 2
-        self.moves_history.append(f"Red: Swap ({self.col_labels[mirrored_col]}{self.row_labels[mirrored_row]})")
+        move_notation = f"{self.col_labels[mirrored_col]}{self.row_labels[mirrored_row]}"
+        self.moves_history.append(f"Red: Swap ({move_notation})")
+        
+        # Print the swap move to console
+        print(f"{move_notation} - red (swap)")
         
         self.move_count += 1
         self.is_black_turn = not self.is_black_turn
