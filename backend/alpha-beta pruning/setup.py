@@ -10,7 +10,7 @@ setup(
             ['alpha-beta-pruning.cpp'],
             include_dirs=[pybind11.get_include()],
             language='c++',
-            extra_compile_args=['-std=c++14', '-O3', '-DNDEBUG'],  # Changed from c++11 to c++14
+            extra_compile_args=['-std=c++17', '-O3', '-DNDEBUG'],
             extra_link_args=['-O3']
         ),
     ],

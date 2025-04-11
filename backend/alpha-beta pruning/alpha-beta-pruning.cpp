@@ -78,14 +78,42 @@ private:
     bool hasWon(Player player) {
         if (player == EMPTY) return false;
         
+        // Initialize Union-Find data structures
         for (int i = 0; i < parent.size(); i++) {
             parent[i] = i;
             rank[i] = 0;
         }
         
+        // Define two virtual nodes for each player:
+        // For PLAYER1: topVirtual connects all top cells, bottomVirtual connects all bottom cells
+        // For PLAYER2: leftVirtual connects all left cells, rightVirtual connects all right cells
+        int topVirtual = size * size;
+        int bottomVirtual = size * size + 1;
+        int leftVirtual = size * size;
+        int rightVirtual = size * size + 1;
+        
+        // Connect all player's pieces
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
                 if (board[i][j] == player) {
+                    // Connect to appropriate virtual nodes if on the edge
+                    if (player == PLAYER1) {
+                        if (i == 0) { // Top row
+                            unionSets(i * size + j, topVirtual);
+                        }
+                        if (i == size-1) { // Bottom row
+                            unionSets(i * size + j, bottomVirtual);
+                        }
+                    } else if (player == PLAYER2) {
+                        if (j == 0) { // Leftmost column
+                            unionSets(i * size + j, leftVirtual);
+                        }
+                        if (j == size-1) { // Rightmost column
+                            unionSets(i * size + j, rightVirtual);
+                        }
+                    }
+                    
+                    // Connect to adjacent cells of the same player
                     static const int dx[] = {-1, -1, 0, 0, 1, 1};
                     static const int dy[] = {0, 1, -1, 1, -1, 0};
                     
@@ -102,35 +130,12 @@ private:
             }
         }
         
+        // Check if virtual nodes are connected
         if (player == PLAYER1) {
-            for (int j = 0; j < size; j++) {
-                if (board[0][j] != PLAYER1) {
-                    continue;
-                }
-                
-                for (int k = 0; k < size; k++) {
-                    if (board[size-1][k] == PLAYER1 && 
-                        find(0 * size + j) == find((size-1) * size + k)) {
-                        return true;
-                    }
-                }
-            }
+            return find(topVirtual) == find(bottomVirtual);
         } else {
-            for (int i = 0; i < size; i++) {
-                if (board[i][0] != PLAYER2) {
-                    continue;
-                }
-                
-                for (int k = 0; k < size; k++) {
-                    if (board[k][size-1] == PLAYER2 && 
-                        find(i * size + 0) == find(k * size + (size-1))) {
-                        return true;
-                    }
-                }
-            }
+            return find(leftVirtual) == find(rightVirtual);
         }
-        
-        return false;
     }
 
     mutable std::unordered_map<std::string, bool> vcCache;
