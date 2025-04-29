@@ -1,6 +1,6 @@
 import sys, math, os, random
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                           QPushButton, QLabel, QSpinBox, QFormLayout, QMessageBox)
+                           QPushButton, QLabel, QSpinBox, QFormLayout, QMessageBox, QComboBox)
 from PyQt5.QtGui import QPainter, QPolygonF, QColor, QPen, QFont, QBrush
 from PyQt5.QtCore import Qt, QPointF, QSize, QTimer
 
@@ -144,9 +144,10 @@ class HexGame:
         self.viewing_history = False
 
 class HexBoard(QWidget):
-    def __init__(self, game, parent=None):
+    def __init__(self, game, main_window, parent=None):
         super().__init__(parent)
         self.game = game
+        self.main_window = main_window
         self.cell_size = 20
         
         width = self.game.size * 2 * self.cell_size + (self.game.size - 1) * self.cell_size
@@ -249,14 +250,8 @@ class HexBoard(QWidget):
         return vertices
 
     def mousePressEvent(self, event):
-        if self.game.game_over or self.game.viewing_history:
-            return
-        
-        # Prevent user from making a move if it's not their turn (Red's turn)
-        parent = self.parent()    
-        # if hasattr(parent, "ai_mode") and parent.ai_mode and not self.game.is_black_turn:
-        # Simplified check: If it's not Blue's turn, don't allow click
-        if not self.game.is_black_turn:
+        if self.game.game_over or self.game.viewing_history or \
+           self.main_window.game_mode != "PvA" or not self.game.is_black_turn:
             return
 
         widget_center_x = self.width() / 2
@@ -283,13 +278,13 @@ class HexBoard(QWidget):
         if closest_row >= 0 and closest_col >= 0 and self.game.make_move(closest_row, closest_col):
             self.update()
             
-            # Update UI elements if needed (e.g., swap button)
-            # if hasattr(parent, "update_swap_button"):
-            #     parent.update_swap_button()
-            
+            # Update navigation buttons state immediately
+            if hasattr(self.main_window, "update_navigation_buttons"):
+                self.main_window.update_navigation_buttons()
+
             # Update turn label immediately after user move
-            if hasattr(parent, "update_turn_label"):
-                parent.update_turn_label()
+            if hasattr(self.main_window, "update_turn_label"):
+                self.main_window.update_turn_label()
 
             # Check if user won
             winner = self.game.check_winner()
@@ -302,13 +297,11 @@ class HexBoard(QWidget):
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
                 
-                if hasattr(parent, "update_game_status"):
-                    parent.update_game_status()
+                if hasattr(self.main_window, "update_game_status"):
+                    self.main_window.update_game_status()
             else:
-                # If game is not over, trigger Red's random move after a short delay
-                # Use QTimer.singleShot to call self.ai_move after 500ms (0.5 seconds)
-                QTimer.singleShot(500, self.ai_move)
-                # self.ai_move() # Removed direct call
+                # If game is not over (PvA mode), trigger Red's AI move after delay
+                QTimer.singleShot(500, self.trigger_ai_move)
 
     def draw_labels(self, painter, widget_center_x, widget_center_y, hex_width, hex_height):
         bold_font = QFont("Arial", 10)
@@ -326,29 +319,33 @@ class HexBoard(QWidget):
             y = widget_center_y + (0 + row - self.game.size + 1) * (hex_height * 0.5) - 8
             painter.drawText(int(x), int(y), str(self.game.row_labels[row]))
 
-    def ai_move(self):
-        if self.game.game_over or self.game.is_black_turn: # Only run if it's Red's turn
+    # Renamed from ai_move, now handles AI move for the CURRENT player
+    def trigger_ai_move(self):
+        if self.game.game_over:
             return
 
-        parent = self.parent()
-        ai_depth = 3 # Set a default depth for the AI search
+        ai_depth = self.main_window.current_ai_depth if hasattr(self.main_window, "current_ai_depth") else 3
+        current_player = 1 if self.game.is_black_turn else 2
 
-        # Check if Red should swap (using game logic)
-        if self.game.move_count == 1:
-            # Basic swap logic: swap if Blue's first move is near center
+        # --- Swap Logic (Only relevant for Red on move 2) ---
+        if self.game.move_count == 1 and current_player == 2: # Red's first potential move
             row, col = self.game.first_move
             center = self.game.size // 2
+            # Basic swap logic: swap if Blue's first move is near center
             if abs(row - center) <= 1 and abs(col - center) <= 1:
                 if self.game.swap_move():
                     self.update()
-                    # No need to update swap button as it's removed/implicit
-                    # Immediately check for winner after swap (unlikely but possible in theory)
                     winner = self.game.check_winner()
                     if winner: self._show_winner_message(winner)
                     # Update turn label after potential swap
-                    if hasattr(parent, "update_turn_label"):
-                        parent.update_turn_label()
-                    return # Swap was made, AI doesn't need to move
+                    if hasattr(self.main_window, "update_turn_label"):
+                        self.main_window.update_turn_label()
+
+                    # If swap occurred in AvA mode, trigger next AI move (Blue)
+                    if not self.game.game_over and self.main_window.game_mode == "AvA":
+                        QTimer.singleShot(500, self.trigger_ai_move)
+                    return # Swap was made, AI doesn't need to move this turn
+        # --- End Swap Logic ---
 
         # Get the best move from the backend alpha-beta implementation
         current_state = self.game.to_python_state() # Get HexState object for the backend
@@ -358,21 +355,28 @@ class HexBoard(QWidget):
             if self.game.make_move(best_move[0], best_move[1]):
                 self.update()
 
+                # Update navigation buttons state immediately
+                if hasattr(self.main_window, "update_navigation_buttons"):
+                    self.main_window.update_navigation_buttons()
+
                 # Update turn label after AI move
-                if hasattr(parent, "update_turn_label"):
-                    parent.update_turn_label()
+                if hasattr(self.main_window, "update_turn_label"):
+                    self.main_window.update_turn_label()
 
                 winner = self.game.check_winner()
                 if winner:
                     self._show_winner_message(winner) # Use helper for message box
-                    if hasattr(parent, "update_game_status"):
-                        parent.update_game_status()
+                    if hasattr(self.main_window, "update_game_status"):
+                        self.main_window.update_game_status()
+                elif self.main_window.game_mode == "AvA": # If game not over and in AvA mode, trigger next AI
+                    QTimer.singleShot(500, self.trigger_ai_move)
             else:
-                # Fallback if alpha-beta suggested an invalid move (shouldn't happen)
-                print("AI suggested an invalid move:", best_move)
-                # Optionally, fall back to random move here if needed
+                # Fallback if alpha-beta suggested an invalid move
+                print(f"AI ({current_player}) suggested an invalid move: {best_move}")
+                # Optionally, fall back to random move or stop in AvA?
+                # For now, just print and stop the AvA chain if error occurs
         else:
-             print("AI could not find a valid move.") # Or game ended before AI move
+             print(f"AI ({current_player}) could not find a valid move.") # Or game ended before AI move
 
     # Helper function to show winner message
     def _show_winner_message(self, winner):
@@ -389,10 +393,12 @@ class HexWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Hex Game")
         self.game = HexGame(11)
-        self.ai_mode = True  # Keep true to block user clicks during Red's turn
-        # self.current_ai_depth = 3 # Removed AI depth
+        self.ai_mode = True  # Keep true to block user clicks during Red's turn (used indirectly now)
+        self.current_ai_depth = 3 # Default AI depth
+        self.game_mode = "PvA" # Default game mode: Player vs AI
         
-        self.setMinimumSize(QSize(1050, 700))
+        # Increase minimum window size
+        self.setMinimumSize(QSize(1200, 850))
         self.setup_ui()
 
     def setup_ui(self):
@@ -403,8 +409,11 @@ class HexWindow(QMainWindow):
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         
-        self.board_widget = HexBoard(self.game)
+        self.board_widget = HexBoard(self.game, main_window=self)
         left_layout.addWidget(self.board_widget)
+        left_layout.addStretch(1) # Keep stretch below board
+
+        # Add stretch factor *before* controls to push them down
         left_layout.addStretch(1)
 
         controls_panel = QWidget()
@@ -419,22 +428,37 @@ class HexWindow(QMainWindow):
         self.game_status.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.game_status)
         
+        # Add AI Difficulty Spinner
+        difficulty_label = QLabel("AI Depth:")
+        self.difficulty_spinner = QSpinBox()
+        self.difficulty_spinner.setRange(1, 5) # Adjust range as needed (higher = harder/slower)
+        self.difficulty_spinner.setValue(self.current_ai_depth)
+        self.difficulty_spinner.setMinimumWidth(80) # Set a minimum width to make it longer
+        self.difficulty_spinner.valueChanged.connect(self.update_ai_depth)
+        controls_layout.addRow(difficulty_label, self.difficulty_spinner)
+
         left_layout.addWidget(controls_panel)
 
         reset_button = QPushButton("New Game")
         reset_button.clicked.connect(self.reset_game)
         left_layout.addWidget(reset_button)
         
-        self.mode_label = QLabel("Play vs Random") # Changed Mode Label
-        self.mode_label.setAlignment(Qt.AlignCenter)
-        self.mode_label.setStyleSheet("font-weight: bold;")
-        left_layout.addWidget(self.mode_label)
-        
+        # Add Game Mode Selection
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("Game Mode:")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Player vs AI", "AI vs AI"])
+        self.mode_combo.setCurrentText(self.game_mode.replace("PvA", "Player vs AI")) # Initial display
+        self.mode_combo.currentIndexChanged.connect(self.change_game_mode)
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mode_combo)
+        left_layout.addLayout(mode_layout)
+
         rules_label = QLabel("Blue: Connect blue borders • Red: Connect red borders")
         rules_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(rules_label)
-        
-        # Add navigation buttons for previous and next steps
+
+        # --- RE-ADD Navigation Buttons --- 
         navigation_layout = QHBoxLayout()
         self.prev_move_button = QPushButton("Previous Move")
         self.prev_move_button.clicked.connect(self.show_previous_move)
@@ -443,6 +467,7 @@ class HexWindow(QMainWindow):
         navigation_layout.addWidget(self.prev_move_button)
         navigation_layout.addWidget(self.next_move_button)
         left_layout.addLayout(navigation_layout)
+        # ---------------------------------
 
         self.view_label = QLabel("Current view: Latest move")
         self.view_label.setAlignment(Qt.AlignCenter)
@@ -466,11 +491,17 @@ class HexWindow(QMainWindow):
         self.board_widget.update()
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.game_status.setText("")
-        
-        # Removed difficulty spinner enabling
-        # self.difficulty_spinner.setEnabled(True)
-        if not self.game.is_black_turn:
-            self.board_widget.ai_move() # ai_move now makes a random move
+        self.difficulty_spinner.setEnabled(True) # Re-enable spinner on new game
+        # Reset viewing history state
+        self.game.current_view_index = -1
+        self.game.viewing_history = False
+        self.update_navigation_buttons()
+        self.update_turn_label() # Update label for Blue's turn
+
+        # If mode is AI vs AI, start the game loop
+        if self.game_mode == "AvA":
+            # Need a small delay to allow UI to settle before AI starts
+            QTimer.singleShot(500, self.board_widget.trigger_ai_move)
 
     def show_previous_move(self):
         if not self.game.board_states:
@@ -519,14 +550,94 @@ class HexWindow(QMainWindow):
 
     def update_turn_label(self):
         if self.game.game_over:
-            winner_name = "Blue (You)" if self.game.winner == 1 else "Red (AI)" # Updated winner name
+            # Determine winner name based on mode
+            if self.game_mode == "PvA":
+                 winner_name = "Blue (You)" if self.game.winner == 1 else "Red (AI)"
+            else: # AvA mode
+                 winner_name = "Blue (AI)" if self.game.winner == 1 else "Red (AI)"
             self.turn_label.setText(f"{winner_name} Wins!")
             self.turn_label.setStyleSheet(f"font-weight: bold; color: {'blue' if self.game.winner == 1 else 'red'}; font-size: 14px;")
         else:
             is_blue = self.game.is_black_turn
-            player_name = "Blue (Your Turn)" if is_blue else "Red (AI Thinking...)" # Updated player name
+            # Determine player name based on mode and turn
+            if self.game_mode == "PvA":
+                player_name = "Blue's Turn" if is_blue else "Red (AI Thinking...)"
+            else: # AvA mode
+                player_name = "Blue (AI Thinking...)" if is_blue else "Red (AI Thinking...)"
             self.turn_label.setText(player_name)
             self.turn_label.setStyleSheet(f"font-weight: bold; color: {'blue' if is_blue else 'red'};")
+
+    # Slot to update AI depth when spinner changes
+    def update_ai_depth(self, value):
+        # Check if game is in progress and value actually changed
+        if self.game.move_count > 0 and value != self.current_ai_depth:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Confirm Difficulty Change")
+            msg_box.setText("Changing the AI difficulty will reset the current game.")
+            msg_box.setInformativeText(f"Do you want to reset the game with the new difficulty ({value})?")
+            reset_button = msg_box.addButton("Reset Game", QMessageBox.AcceptRole) # Yes
+            cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)    # No
+            msg_box.setDefaultButton(cancel_button)
+            
+            msg_box.exec_()
+            
+            if msg_box.clickedButton() == reset_button:
+                # User confirmed reset
+                self.current_ai_depth = value
+                self.reset_game() # reset_game handles spinner value and enabling
+            else:
+                # User cancelled - revert spinner value visually
+                # Block signals to prevent this setValue triggering the slot again
+                self.difficulty_spinner.blockSignals(True)
+                self.difficulty_spinner.setValue(self.current_ai_depth)
+                self.difficulty_spinner.blockSignals(False)
+        else:
+             # Game not started or value is the same, just update
+            self.current_ai_depth = value
+            # Ensure spinner reflects the value if game hasn't started
+            if self.game.move_count == 0:
+                 self.difficulty_spinner.blockSignals(True)
+                 self.difficulty_spinner.setValue(self.current_ai_depth)
+                 self.difficulty_spinner.blockSignals(False)
+
+    # Slot to change game mode when combo box changes
+    def change_game_mode(self, index):
+        new_mode_text = self.mode_combo.itemText(index)
+        new_mode = "PvA" if new_mode_text == "Player vs AI" else "AvA"
+
+        # Check if game is in progress and mode actually changed
+        if self.game.move_count > 0 and new_mode != self.game_mode:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Confirm Mode Change")
+            msg_box.setText("Changing the game mode will reset the current game.")
+            msg_box.setInformativeText(f"Do you want to reset the game to '{new_mode_text}' mode?")
+            reset_button = msg_box.addButton("Reset Game", QMessageBox.AcceptRole)
+            cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)
+            msg_box.setDefaultButton(cancel_button)
+
+            msg_box.exec_()
+
+            if msg_box.clickedButton() == reset_button:
+                # User confirmed reset
+                self.game_mode = new_mode
+                self.reset_game()
+            else:
+                # User cancelled - revert combo box value visually
+                current_mode_text = "Player vs AI" if self.game_mode == "PvA" else "AI vs AI"
+                self.mode_combo.blockSignals(True)
+                self.mode_combo.setCurrentText(current_mode_text)
+                self.mode_combo.blockSignals(False)
+        else:
+            # Game not started or mode is the same, just update
+            self.game_mode = new_mode
+            # If game hasn't started, ensure combo reflects the mode
+            if self.game.move_count == 0:
+                current_mode_text = "Player vs AI" if self.game_mode == "PvA" else "AI vs AI"
+                self.mode_combo.blockSignals(True)
+                self.mode_combo.setCurrentText(current_mode_text)
+                self.mode_combo.blockSignals(False)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
