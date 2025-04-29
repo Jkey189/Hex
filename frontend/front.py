@@ -425,7 +425,7 @@ class HexWindow(QMainWindow):
         self.setWindowTitle("Hex Game")
         self.game = HexGame(11)
         self.ai_mode = True  # Keep true to block user clicks during Red's turn (used indirectly now)
-        self.current_ai_depth = 3 # Default AI depth
+        self.current_ai_depth = 3 # Default AI depth (Difficult)
         self.game_mode = "PvA" # Default game mode: Player vs AI
         
         # Increase minimum window size
@@ -459,14 +459,23 @@ class HexWindow(QMainWindow):
         self.game_status.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.game_status)
         
-        # Add AI Difficulty Spinner
-        difficulty_label = QLabel("AI Depth:")
-        self.difficulty_spinner = QSpinBox()
-        self.difficulty_spinner.setRange(1, 5) # Adjust range as needed (higher = harder/slower)
-        self.difficulty_spinner.setValue(self.current_ai_depth)
-        self.difficulty_spinner.setMinimumWidth(80) # Set a minimum width to make it longer
-        self.difficulty_spinner.valueChanged.connect(self.update_ai_depth)
-        controls_layout.addRow(difficulty_label, self.difficulty_spinner)
+        # --- Change AI Difficulty from Spinner to ComboBox ---
+        difficulty_label = QLabel("AI Difficulty:")
+        self.difficulty_combo = QComboBox()
+        self.difficulty_combo.addItems(["Easy", "Medium", "Difficult"]) # Textual options
+        # Map depth to initial text selection
+        if self.current_ai_depth == 1:
+            initial_difficulty_text = "Easy"
+        elif self.current_ai_depth == 2:
+            initial_difficulty_text = "Medium"
+        else: # Default to Difficult for 3 or other values
+            initial_difficulty_text = "Difficult"
+            self.current_ai_depth = 3 # Ensure depth matches text
+        self.difficulty_combo.setCurrentText(initial_difficulty_text)
+        self.difficulty_combo.setMinimumWidth(100) # Adjust width if needed
+        self.difficulty_combo.currentIndexChanged.connect(self.update_ai_difficulty) # Connect to new slot
+        controls_layout.addRow(difficulty_label, self.difficulty_combo)
+        # ------------------------------------------------------
 
         left_layout.addWidget(controls_panel)
 
@@ -511,9 +520,9 @@ class HexWindow(QMainWindow):
 
     def update_game_status(self):
         if self.game.game_over:
-            winner_color = "blue" if self.game.winner == 1 else "red"
             self.game_status.setText("Game Over")
-            self.game_status.setStyleSheet(f"font-weight: bold; color: {winner_color};")
+            # Use light gray for "Game Over" text for better visibility
+            self.game_status.setStyleSheet("font-weight: bold; color: lightgray;")
         else:
             self.game_status.setText("")
 
@@ -523,7 +532,7 @@ class HexWindow(QMainWindow):
         self.board_widget.update()
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.game_status.setText("")
-        self.difficulty_spinner.setEnabled(True) # Re-enable spinner on new game
+        self.difficulty_combo.setEnabled(True) # Re-enable combo on new game
         # Reset viewing history state
         self.game.current_view_index = -1
         self.game.viewing_history = False
@@ -590,7 +599,9 @@ class HexWindow(QMainWindow):
             else: # AvA mode
                  winner_name = "Blue (AI)" if self.game.winner == 1 else "Red (AI)"
             self.turn_label.setText(f"{winner_name} Wins!")
-            self.turn_label.setStyleSheet(f"font-weight: bold; color: {'blue' if self.game.winner == 1 else 'red'}; font-size: 14px;")
+            # Use lighter shades for winner announcement
+            winner_color = "lightblue" if self.game.winner == 1 else "lightcoral" # Lighter blue/red
+            self.turn_label.setStyleSheet(f"font-weight: bold; color: {winner_color}; font-size: 14px;")
         else:
             is_blue = self.game.is_black_turn
             # Determine player name based on mode and turn
@@ -601,41 +612,67 @@ class HexWindow(QMainWindow):
             else: # AvA mode
                 player_name = "Blue (AI Thinking...)" if is_blue else "Red (AI Thinking...)"
             self.turn_label.setText(player_name)
-            self.turn_label.setStyleSheet(f"font-weight: bold; color: {'blue' if is_blue else 'red'};")
+            # Use lighter shades for turn indicator
+            turn_color = "lightblue" if is_blue else "lightcoral" # Lighter blue/red
+            self.turn_label.setStyleSheet(f"font-weight: bold; color: {turn_color};")
 
-    # Slot to update AI depth when spinner changes
-    def update_ai_depth(self, value):
+    # Slot to update AI difficulty when combo box changes
+    def update_ai_difficulty(self, index):
+        difficulty_text = self.difficulty_combo.itemText(index)
+        # Map text to depth
+        if difficulty_text == "Easy":
+            new_depth = 1
+        elif difficulty_text == "Medium":
+            new_depth = 2
+        else: # Difficult
+            new_depth = 3
+
         # Check if game is in progress and value actually changed
-        if self.game.move_count > 0 and value != self.current_ai_depth:
+        if self.game.move_count > 0 and new_depth != self.current_ai_depth:
             msg_box = QMessageBox()
             msg_box.setIcon(QMessageBox.Warning)
             msg_box.setWindowTitle("Confirm Difficulty Change")
             msg_box.setText("Changing the AI difficulty will reset the current game.")
-            msg_box.setInformativeText(f"Do you want to reset the game with the new difficulty ({value})?")
+            msg_box.setInformativeText(f"Do you want to reset the game to '{difficulty_text}' difficulty?")
             reset_button = msg_box.addButton("Reset Game", QMessageBox.AcceptRole) # Yes
             cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)    # No
             msg_box.setDefaultButton(cancel_button)
-            
+
             msg_box.exec_()
-            
+
             if msg_box.clickedButton() == reset_button:
                 # User confirmed reset
-                self.current_ai_depth = value
-                self.reset_game() # reset_game handles spinner value and enabling
+                self.current_ai_depth = new_depth
+                self.reset_game() # reset_game handles UI state
             else:
-                # User cancelled - revert spinner value visually
-                # Block signals to prevent this setValue triggering the slot again
-                self.difficulty_spinner.blockSignals(True)
-                self.difficulty_spinner.setValue(self.current_ai_depth)
-                self.difficulty_spinner.blockSignals(False)
+                # User cancelled - revert combo box value visually
+                # Determine current difficulty text based on self.current_ai_depth
+                if self.current_ai_depth == 1:
+                    current_difficulty_text = "Easy"
+                elif self.current_ai_depth == 2:
+                    current_difficulty_text = "Medium"
+                else: # 3
+                    current_difficulty_text = "Difficult"
+
+                self.difficulty_combo.blockSignals(True)
+                self.difficulty_combo.setCurrentText(current_difficulty_text)
+                self.difficulty_combo.blockSignals(False)
         else:
-             # Game not started or value is the same, just update
-            self.current_ai_depth = value
-            # Ensure spinner reflects the value if game hasn't started
+             # Game not started or value is the same, just update internal depth
+            self.current_ai_depth = new_depth
+            # Ensure combo box reflects the value if game hasn't started
             if self.game.move_count == 0:
-                 self.difficulty_spinner.blockSignals(True)
-                 self.difficulty_spinner.setValue(self.current_ai_depth)
-                 self.difficulty_spinner.blockSignals(False)
+                # Determine current difficulty text based on self.current_ai_depth
+                if self.current_ai_depth == 1:
+                    current_difficulty_text = "Easy"
+                elif self.current_ai_depth == 2:
+                    current_difficulty_text = "Medium"
+                else: # 3
+                    current_difficulty_text = "Difficult"
+
+                self.difficulty_combo.blockSignals(True)
+                self.difficulty_combo.setCurrentText(current_difficulty_text)
+                self.difficulty_combo.blockSignals(False)
 
     # Slot to change game mode when combo box changes
     def change_game_mode(self, index):
