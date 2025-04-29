@@ -47,6 +47,7 @@ private:
     int size;
     std::vector<std::vector<Player>> board;
     
+    // Union-Find data structures need to accommodate 4 virtual nodes
     std::vector<int> parent;
     std::vector<int> rank;
     
@@ -78,19 +79,25 @@ private:
     bool hasWon(Player player) {
         if (player == EMPTY) return false;
         
+        // Resize parent/rank arrays if needed (should happen in constructor ideally,
+        // but resizing here ensures it's correct even if board size changes)
+        // Need size*size cells + 4 virtual nodes
+        if (parent.size() != size * size + 4) {
+            parent.resize(size * size + 4);
+            rank.resize(size * size + 4, 0);
+        }
+        
         // Initialize Union-Find data structures
         for (int i = 0; i < parent.size(); i++) {
             parent[i] = i;
             rank[i] = 0;
         }
         
-        // Define two virtual nodes for each player:
-        // For PLAYER1: topVirtual connects all top cells, bottomVirtual connects all bottom cells
-        // For PLAYER2: leftVirtual connects all left cells, rightVirtual connects all right cells
-        int topVirtual = size * size;
-        int bottomVirtual = size * size + 1;
-        int leftVirtual = size * size;
-        int rightVirtual = size * size + 1;
+        // Define 4 distinct virtual nodes:
+        int topVirtual = size * size;      // Index for Blue's top edge
+        int bottomVirtual = size * size + 1; // Index for Blue's bottom edge
+        int leftVirtual = size * size + 2;   // Index for Red's left edge
+        int rightVirtual = size * size + 3;  // Index for Red's right edge
         
         // Connect all player's pieces
         for (int i = 0; i < size; i++) {
@@ -197,10 +204,11 @@ private:
 public:
     HexBoard(int s) : size(s) {
         board.resize(size, std::vector<Player>(size, EMPTY));
-        parent.resize(size * size);
-        rank.resize(size * size, 0);
+        // Initialize parent/rank arrays for size*size cells + 4 virtual nodes
+        parent.resize(size * size + 4);
+        rank.resize(size * size + 4, 0);
         
-        for (int i = 0; i < size * size; i++) {
+        for (int i = 0; i < size * size + 4; i++) {
             parent[i] = i;
         }
     }

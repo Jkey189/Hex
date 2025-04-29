@@ -28,7 +28,8 @@ except ImportError:
 # Force C++ implementation to be used
 USE_CPP_IMPLEMENTATION = True
 
-DIRECTIONS = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]
+# Corrected DIRECTIONS list including all 6 neighbors
+DIRECTIONS = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
 class HexState:
     def __init__(self, size, is_black_turn):
@@ -62,6 +63,8 @@ def _check_win_bfs(board, player):
     # Create a queue for BFS and add starting positions
     queue = deque()
     
+    print(f"  BFS Check Start: Player {player}") # DEBUG
+
     # Initialize differently depending on player:
     if player == 1:  # Blue: needs to connect top and bottom
         # Add all Blue stones in the top row to the queue
@@ -69,23 +72,28 @@ def _check_win_bfs(board, player):
             if board[0][col] == player:
                 queue.append((0, col))
                 visited.add((0, col))
+                print(f"    Added start node: {(0, col)}") # DEBUG
     else:  # Red: needs to connect left and right
         # Add all Red stones in the leftmost column to the queue
         for row in range(size):
             if board[row][0] == player:
                 queue.append((row, 0))
                 visited.add((row, 0))
+                print(f"    Added start node: {(row, 0)}") # DEBUG
     
     # No starting stones found
     if not queue:
+        print(f"    BFS Check End: No start nodes found for Player {player}.") # DEBUG
         return False
     
     # Run BFS
     while queue:
         row, col = queue.popleft()
+        print(f"    Visiting: {(row, col)} for Player {player}") # DEBUG
         
         # Check for victory (reaching the opposite edge)
         if (player == 1 and row == size - 1) or (player == 2 and col == size - 1):
+            print(f"    BFS Check End: Path found for Player {player} to target edge at {(row, col)}!") # DEBUG
             return True
         
         # Check all six neighboring hexagons
@@ -98,8 +106,10 @@ def _check_win_bfs(board, player):
                 (new_row, new_col) not in visited):
                 visited.add((new_row, new_col))
                 queue.append((new_row, new_col))
+                print(f"      Adding neighbor: {(new_row, new_col)} for Player {player}") # DEBUG
     
     # If we exhausted the queue without finding a path to the opposite edge
+    print(f"    BFS Check End: No path found for Player {player}.") # DEBUG
     return False
 
 def has_winning_path(board, player):
@@ -324,21 +334,23 @@ def check_win(board, player):
         bool: True if player has a winning path, False otherwise
     """
     # Try to use C++ implementation for better performance
-    if USE_CPP_IMPLEMENTATION:
-        try:
-            # Convert to C++ board representation
-            size = len(board)
-            cpp_board = hex_cpp.HexBoard(size)
-            cpp_board.set_board(board)
-            
-            # Select the appropriate player enum
-            cpp_player = hex_cpp.Player.PLAYER1 if player == 1 else hex_cpp.Player.PLAYER2
-            
-            # Call C++ implementation
-            return cpp_board.check_win(cpp_player)
-        except Exception as e:
-            print(f"Error in C++ win checking: {e}. Falling back to Python.")
-            # Fall through to Python implementation on error
-    
-    # Python implementation using BFS
+    # TEMPORARILY DISABLED FOR DEBUGGING WIN CONDITION
+    # if USE_CPP_IMPLEMENTATION:
+    #     try:
+    #         # Convert to C++ board representation
+    #         size = len(board)
+    #         cpp_board = hex_cpp.HexBoard(size)
+    #         cpp_board.set_board(board)
+    #
+    #         # Select the appropriate player enum
+    #         cpp_player = hex_cpp.Player.PLAYER1 if player == 1 else hex_cpp.Player.PLAYER2
+    #
+    #         # Call C++ implementation
+    #         return cpp_board.check_win(cpp_player)
+    #     except Exception as e:
+    #         print(f"Error in C++ win checking: {e}. Falling back to Python.")
+    #         # Fall through to Python implementation on error
+
+    # Python implementation using BFS (Forced for debugging)
+    print("DEBUG: Using Python BFS for win checking.") # Add print statement for confirmation
     return has_winning_path(board, player)

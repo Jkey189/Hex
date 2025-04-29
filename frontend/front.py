@@ -123,10 +123,20 @@ class HexGame:
         Returns:
             int or None: 1 for Blue win, 2 for Red win, None if no winner
         """
+        # --- DEBUG PRINT --- Print board state before checking win
+        print("--- Checking Winner ---")
+        print(f"Current Player Check: {1 if self.is_black_turn else 2}") # Note: This might be confusing, check_winner checks *both*
+        print("Board State Being Checked:")
+        for r_idx, row in enumerate(self.board):
+            print(f"  {r_idx}: {row}")
+        # ---------------------
+
         if back.check_win(self.board, 1):
+            print("DEBUG: back.check_win(board, 1) returned True") # Add debug print
             self.game_over, self.winner = True, 1
             return 1
         elif back.check_win(self.board, 2):
+            print("DEBUG: back.check_win(board, 2) returned True") # Add debug print
             self.game_over, self.winner = True, 2
             return 2
         return None
