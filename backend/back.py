@@ -13,7 +13,7 @@ except ImportError:
     try:
         # Try to import from the subdirectory
         from backend import alpha_beta_pruning
-        USE_CPP_IMPLEMENTATION = Tru
+        USE_CPP_IMPLEMENTATION = True
         print("Successfully imported alpha_beta_pruning module")
     except ImportError:
         try:

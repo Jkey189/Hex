@@ -8,6 +8,23 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend import back
 
 class HexGame:
+    """
+    Main game logic class for Hex.
+    
+    Responsible for:
+    - Maintaining the game state (board, current player, game status)
+    - Making/undoing moves and tracking move history
+    - Handling the swap rule (pie rule)
+    - Checking for win conditions
+    
+    Attributes:
+        size (int): Board size (creates a size × size grid)
+        board (list): 2D grid where 0=empty, 1=blue player(Player1), 2=red player(Player2)
+        is_black_turn (bool): True if it's blue player's turn, False for red player
+        moves_history (list): List of string representations of moves
+        col_labels/row_labels (list): Labels for board coordinates
+        board_states (list): History of all board states for move replay
+    """
     def __init__(self, size):
         self.size = size
         self.board = [[0] * size for _ in range(size)]
@@ -24,17 +41,40 @@ class HexGame:
         self.viewing_history = False
 
     def to_python_state(self):
+        """
+        Converts the current game state to a HexState object for AI processing
+        """
         state = back.HexState(self.size, self.is_black_turn)
         state.board = [row[:] for row in self.board]
         return state
 
     def make_move(self, row, col):
+        """
+        Attempts to make a move at the specified position.
+        
+        Args:
+            row (int): Row index
+            col (int): Column index
+            
+        Returns:
+            bool: True if move was successful, False if invalid
+        
+        Side effects:
+            - Updates the board state
+            - Adds move to history
+            - Switches current player
+            - Records board state for replay
+        """
         if self.game_over or self.board[row][col] != 0: return False
         
         self.board[row][col] = 1 if self.is_black_turn else 2
         player_color = "Blue" if self.is_black_turn else "Red"
         move_notation = f"{self.col_labels[col]}{self.row_labels[row]}"
         self.moves_history.append(f"{player_color}: {move_notation}")
+        
+        # Print the move to console
+        lowercase_color = player_color.lower()
+        print(f"{move_notation} - {lowercase_color}")
         
         self.move_count += 1
         if self.move_count == 1: self.first_move = (row, col)
@@ -43,8 +83,43 @@ class HexGame:
         self.board_states.append([row[:] for row in self.board])
         self.current_view_index = -1
         return True
+        
+    def swap_move(self):
+        """
+        Implements the "pie rule" (swap rule) in Hex.
+        After the first move, the second player can choose to swap positions,
+        taking the first player's position and color.
+        
+        Returns:
+            bool: True if the swap was successful, False otherwise
+        """
+        if self.move_count != 1 or self.is_black_turn: return False
+        
+        row, col = self.first_move
+        mirrored_row, mirrored_col = col, row
+        
+        self.board[mirrored_row][mirrored_col] = 2
+        move_notation = f"{self.col_labels[mirrored_col]}{self.row_labels[mirrored_row]}"
+        self.moves_history.append(f"Red: Swap ({move_notation})")
+        
+        # Print the swap move to console
+        print(f"{move_notation} - red (swap)")
+        
+        self.move_count += 1
+        self.is_black_turn = not self.is_black_turn
+        self.board_states.append([row[:] for row in self.board])
+        self.current_view_index = -1
+        return True
 
     def check_winner(self):
+        """
+        Checks if either player has won by connecting their sides.
+        Blue (Player 1) wins by connecting top and bottom.
+        Red (Player 2) wins by connecting left and right.
+        
+        Returns:
+            int or None: 1 for Blue win, 2 for Red win, None if no winner
+        """
         if back.check_win(self.board, 1):
             self.game_over, self.winner = True, 1
             return 1
@@ -54,6 +129,9 @@ class HexGame:
         return None
 
     def reset(self):
+        """
+        Resets the game to its initial state
+        """
         self.board = [[0] * self.size for _ in range(self.size)]
         self.is_black_turn = True
         self.moves_history = []
@@ -87,6 +165,7 @@ class HexBoard(QWidget):
         hex_width = 2 * self.cell_size
         hex_height = 2 * self.cell_size * math.sin(math.pi/3)
         
+        # Draw board hexagons
         for row in range(self.game.size):
             for col in range(self.game.size):
                 x = widget_center_x + (col - row) * (hex_width * 0.75)
@@ -110,31 +189,38 @@ class HexBoard(QWidget):
     def draw_borders(self, painter, cx, cy, hex_width, hex_height):
         size = self.game.size
         
+        # Helper function to draw border line
         def draw_border_line(v1, v2, color):
             painter.setPen(QPen(QColor(color), 2))
             painter.drawLine(int(v1[0]), int(v1[1]), int(v2[0]), int(v2[1]))
         
+        # Draw blue borders (top and bottom)
         painter.setPen(QPen(QColor("blue"), 2))
         for col in range(size):
+            # Top border
             x, y = self.get_hex_position(0, col, cx, cy, hex_width, hex_height)
             vertices = self.get_hex_vertices(x, y)
             draw_border_line([vertices[4].x(), vertices[4].y()], [vertices[5].x(), vertices[5].y()], "blue")
             draw_border_line([vertices[0].x(), vertices[0].y()], [vertices[5].x(), vertices[5].y()], "blue")
             
+            # Bottom border
             x, y = self.get_hex_position(size-1, col, cx, cy, hex_width, hex_height)
             vertices = self.get_hex_vertices(x, y)
             if col < size - 1:
                 draw_border_line([vertices[1].x(), vertices[1].y()], [vertices[2].x(), vertices[2].y()], "blue")
             draw_border_line([vertices[2].x(), vertices[2].y()], [vertices[3].x(), vertices[3].y()], "blue")
             
+        # Draw red borders (left and right)
         painter.setPen(QPen(QColor("red"), 2))
         for row in range(size):
+            # Left border
             x, y = self.get_hex_position(row, 0, cx, cy, hex_width, hex_height)
             vertices = self.get_hex_vertices(x, y)
             draw_border_line([vertices[3].x(), vertices[3].y()], [vertices[4].x(), vertices[4].y()], "red")
             if row > 0:
                 draw_border_line([vertices[4].x(), vertices[4].y()], [vertices[5].x(), vertices[5].y()], "red")
             
+            # Right border
             x, y = self.get_hex_position(row, size-1, cx, cy, hex_width, hex_height)
             vertices = self.get_hex_vertices(x, y)
             draw_border_line([vertices[0].x(), vertices[0].y()], [vertices[1].x(), vertices[1].y()], "red")
@@ -192,7 +278,6 @@ class HexBoard(QWidget):
         if closest_row >= 0 and closest_col >= 0 and self.game.make_move(closest_row, closest_col):
             self.update()
             
-
             # Update navigation buttons state immediately
             if hasattr(self.main_window, "update_navigation_buttons"):
                 self.main_window.update_navigation_buttons()
@@ -211,6 +296,7 @@ class HexBoard(QWidget):
                 msg.setInformativeText("Click 'New Game' to play again.")
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
+                
                 if hasattr(self.main_window, "update_game_status"):
                     self.main_window.update_game_status()
             else:
