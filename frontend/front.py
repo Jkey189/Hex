@@ -94,21 +94,24 @@ class HexGame:
             bool: True if the swap was successful, False otherwise
         """
         if self.move_count != 1 or self.is_black_turn: return False
-        
-        row, col = self.first_move
-        mirrored_row, mirrored_col = col, row
-        
-        self.board[mirrored_row][mirrored_col] = 2
-        move_notation = f"{self.col_labels[mirrored_col]}{self.row_labels[mirrored_row]}"
+
+        row, col = self.first_move # Get the original first move coordinates
+
+        # Correct swap logic: Change the original piece to Red (2)
+        self.board[row][col] = 2
+        # Mirrored position logic removed
+
+        # Update move notation to reflect the *original* position being taken by Red
+        move_notation = f"{self.col_labels[col]}{self.row_labels[row]}"
         self.moves_history.append(f"Red: Swap ({move_notation})")
-        
-        # Print the swap move to console
+
+        # Print the swap move to console (using the original location)
         print(f"{move_notation} - red (swap)")
-        
+
         self.move_count += 1
         self.is_black_turn = not self.is_black_turn
-        self.board_states.append([row[:] for row in self.board])
-        self.current_view_index = -1
+        self.board_states.append([row[:] for row in self.board]) # Save state after swap
+        self.current_view_index = -1 # Reset history view
         return True
 
     def check_winner(self):
@@ -250,8 +253,16 @@ class HexBoard(QWidget):
         return vertices
 
     def mousePressEvent(self, event):
-        if self.game.game_over or self.game.viewing_history or \
-           self.main_window.game_mode != "PvA" or not self.game.is_black_turn:
+        # Allow clicks if game is not over, not viewing history, AND
+        # (mode is PvA and it's Blue's turn) OR (mode is PvP and it's the current player's turn)
+        allow_click = False
+        if not self.game.game_over and not self.game.viewing_history:
+            if self.main_window.game_mode == "PvA" and self.game.is_black_turn:
+                allow_click = True
+            elif self.main_window.game_mode == "PvP":
+                allow_click = True # Both players click, make_move checks turn internally implicitly
+
+        if not allow_click:
             return
 
         widget_center_x = self.width() / 2
@@ -274,34 +285,47 @@ class HexBoard(QWidget):
                     min_distance = distance
                     closest_row, closest_col = row, col
         
-        # User (Blue) makes a move
-        if closest_row >= 0 and closest_col >= 0 and self.game.make_move(closest_row, closest_col):
-            self.update()
-            
-            # Update navigation buttons state immediately
-            if hasattr(self.main_window, "update_navigation_buttons"):
-                self.main_window.update_navigation_buttons()
+        # Check if a valid hex cell was clicked
+        if closest_row >= 0 and closest_col >= 0:
+            # --- PvP Swap Logic --- Check if Red player clicked on Blue's first move to swap
+            is_pvp = self.main_window.game_mode == "PvP"
+            is_second_move = self.game.move_count == 1
+            is_red_turn = not self.game.is_black_turn
+            clicked_first_move = (closest_row, closest_col) == self.game.first_move
 
-            # Update turn label immediately after user move
-            if hasattr(self.main_window, "update_turn_label"):
-                self.main_window.update_turn_label()
-
-            # Check if user won
-            winner = self.game.check_winner()
-            if winner:
-                winner_name = "Blue (You)" # Winner is always Blue if move was made here
-                msg = QMessageBox()
-                msg.setWindowTitle("Game Over")
-                msg.setText(f"{winner_name} has won the game by connecting their borders!")
-                msg.setInformativeText("Click 'New Game' to play again.")
-                msg.setIcon(QMessageBox.Information)
-                msg.exec_()
-                
-                if hasattr(self.main_window, "update_game_status"):
-                    self.main_window.update_game_status()
+            move_successful = False
+            if is_pvp and is_second_move and is_red_turn and clicked_first_move:
+                move_successful = self.game.swap_move()
             else:
-                # If game is not over (PvA mode), trigger Red's AI move after delay
-                QTimer.singleShot(500, self.trigger_ai_move)
+                # --- Regular Move Logic ---
+                move_successful = self.game.make_move(closest_row, closest_col)
+            # -------------------------
+
+            # User (Blue or Red in PvP) makes a move or swaps
+            if move_successful:
+                self.update()
+
+                # Update navigation buttons state immediately
+                if hasattr(self.main_window, "update_navigation_buttons"):
+                    self.main_window.update_navigation_buttons()
+
+                # Update turn label immediately after user move
+                if hasattr(self.main_window, "update_turn_label"):
+                    self.main_window.update_turn_label()
+
+                # Check if user won
+                winner = self.game.check_winner()
+                if winner:
+                    # Use the helper function to show the winner message
+                    self._show_winner_message(winner)
+                    if hasattr(self.main_window, "update_game_status"):
+                        self.main_window.update_game_status()
+                else:
+                    # Only trigger AI if in PvA mode and it's now AI's (Red's) turn
+                    if self.main_window.game_mode == "PvA" and not self.game.is_black_turn:
+                        QTimer.singleShot(500, self.trigger_ai_move)
+                    # In PvP mode, do nothing - wait for the next player's click.
+                    # In AvA mode, clicks are disabled anyway.
 
     def draw_labels(self, painter, widget_center_x, widget_center_y, hex_width, hex_height):
         bold_font = QFont("Arial", 10)
@@ -378,9 +402,16 @@ class HexBoard(QWidget):
         else:
              print(f"AI ({current_player}) could not find a valid move.") # Or game ended before AI move
 
-    # Helper function to show winner message
+    # Helper function to show winner message (generalized for modes)
     def _show_winner_message(self, winner):
-        winner_name = "Blue (You)" if winner == 1 else "Red (AI)"
+        # Determine winner name based on mode
+        if self.main_window.game_mode == "PvP":
+            winner_name = "Blue (Player)" if winner == 1 else "Red (Player)"
+        elif self.main_window.game_mode == "PvA":
+            winner_name = "Blue (You)" if winner == 1 else "Red (AI)"
+        else: # AvA
+            winner_name = "Blue (AI)" if winner == 1 else "Red (AI)"
+
         msg = QMessageBox()
         msg.setWindowTitle("Game Over")
         msg.setText(f"{winner_name} has won the game by connecting their borders!")
@@ -447,8 +478,9 @@ class HexWindow(QMainWindow):
         mode_layout = QHBoxLayout()
         mode_label = QLabel("Game Mode:")
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Player vs AI", "AI vs AI"])
-        self.mode_combo.setCurrentText(self.game_mode.replace("PvA", "Player vs AI")) # Initial display
+        self.mode_combo.addItems(["Player vs Player", "Player vs AI", "AI vs AI"]) # Added PvP
+        # Default to PvA for now, can be changed
+        self.mode_combo.setCurrentText("Player vs AI" if self.game_mode == "PvA" else "AI vs AI") # Set initial text based on default mode
         self.mode_combo.currentIndexChanged.connect(self.change_game_mode)
         mode_layout.addWidget(mode_label)
         mode_layout.addWidget(self.mode_combo)
@@ -551,7 +583,9 @@ class HexWindow(QMainWindow):
     def update_turn_label(self):
         if self.game.game_over:
             # Determine winner name based on mode
-            if self.game_mode == "PvA":
+            if self.game_mode == "PvP":
+                 winner_name = "Blue (Player)" if self.game.winner == 1 else "Red (Player)"
+            elif self.game_mode == "PvA":
                  winner_name = "Blue (You)" if self.game.winner == 1 else "Red (AI)"
             else: # AvA mode
                  winner_name = "Blue (AI)" if self.game.winner == 1 else "Red (AI)"
@@ -560,7 +594,9 @@ class HexWindow(QMainWindow):
         else:
             is_blue = self.game.is_black_turn
             # Determine player name based on mode and turn
-            if self.game_mode == "PvA":
+            if self.game_mode == "PvP":
+                player_name = "Blue's Turn" if is_blue else "Red's Turn"
+            elif self.game_mode == "PvA":
                 player_name = "Blue's Turn" if is_blue else "Red (AI Thinking...)"
             else: # AvA mode
                 player_name = "Blue (AI Thinking...)" if is_blue else "Red (AI Thinking...)"
@@ -604,7 +640,13 @@ class HexWindow(QMainWindow):
     # Slot to change game mode when combo box changes
     def change_game_mode(self, index):
         new_mode_text = self.mode_combo.itemText(index)
-        new_mode = "PvA" if new_mode_text == "Player vs AI" else "AvA"
+        # Map text to mode identifier
+        if new_mode_text == "Player vs Player":
+            new_mode = "PvP"
+        elif new_mode_text == "Player vs AI":
+            new_mode = "PvA"
+        else: # "AI vs AI"
+            new_mode = "AvA"
 
         # Check if game is in progress and mode actually changed
         if self.game.move_count > 0 and new_mode != self.game_mode:
@@ -625,7 +667,13 @@ class HexWindow(QMainWindow):
                 self.reset_game()
             else:
                 # User cancelled - revert combo box value visually
-                current_mode_text = "Player vs AI" if self.game_mode == "PvA" else "AI vs AI"
+                # Determine current mode text based on self.game_mode
+                if self.game_mode == "PvP":
+                    current_mode_text = "Player vs Player"
+                elif self.game_mode == "PvA":
+                    current_mode_text = "Player vs AI"
+                else: # AvA
+                    current_mode_text = "AI vs AI"
                 self.mode_combo.blockSignals(True)
                 self.mode_combo.setCurrentText(current_mode_text)
                 self.mode_combo.blockSignals(False)
@@ -634,7 +682,13 @@ class HexWindow(QMainWindow):
             self.game_mode = new_mode
             # If game hasn't started, ensure combo reflects the mode
             if self.game.move_count == 0:
-                current_mode_text = "Player vs AI" if self.game_mode == "PvA" else "AI vs AI"
+                # Determine current mode text based on self.game_mode
+                if self.game_mode == "PvP":
+                    current_mode_text = "Player vs Player"
+                elif self.game_mode == "PvA":
+                    current_mode_text = "Player vs AI"
+                else: # AvA
+                    current_mode_text = "AI vs AI"
                 self.mode_combo.blockSignals(True)
                 self.mode_combo.setCurrentText(current_mode_text)
                 self.mode_combo.blockSignals(False)
