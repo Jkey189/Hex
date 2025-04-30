@@ -1,7 +1,7 @@
-import sys, math, os, random
+import sys, math, os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                           QPushButton, QLabel, QSpinBox, QFormLayout, QMessageBox, QComboBox)
-from PyQt5.QtGui import QPainter, QPolygonF, QColor, QPen, QFont, QBrush
+                           QPushButton, QLabel, QFormLayout, QMessageBox, QComboBox)
+from PyQt5.QtGui import QPainter, QPolygonF, QColor, QPen, QFont
 from PyQt5.QtCore import Qt, QPointF, QSize, QTimer
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,25 +10,11 @@ from backend import back
 class HexGame:
     """
     Main game logic class for Hex.
-    
-    Responsible for:
-    - Maintaining the game state (board, current player, game status)
-    - Making/undoing moves and tracking move history
-    - Handling the swap rule (pie rule)
-    - Checking for win conditions
-    
-    Attributes:
-        size (int): Board size (creates a size × size grid)
-        board (list): 2D grid where 0=empty, 1=blue player(Player1), 2=red player(Player2)
-        is_black_turn (bool): True if it's blue player's turn, False for red player
-        moves_history (list): List of string representations of moves
-        col_labels/row_labels (list): Labels for board coordinates
-        board_states (list): History of all board states for move replay
     """
     def __init__(self, size):
         self.size = size
         self.board = [[0] * size for _ in range(size)]
-        self.is_black_turn = True
+        self.is_black_turn = True  # Blue is first player
         self.moves_history = []
         self.col_labels = "abcdefghijklmnopqrstuvwxyz"[:size]
         self.row_labels = list(range(1, size + 1))
@@ -39,46 +25,27 @@ class HexGame:
         self.board_states = []
         self.current_view_index = -1
         self.viewing_history = False
-        self.paused = False # Add paused state
+        self.paused = False
 
     def to_python_state(self):
-        """
-        Converts the current game state to a HexState object for AI processing
-        """
+        """Converts current game state to HexState object for AI"""
         state = back.HexState(self.size, self.is_black_turn)
         state.board = [row[:] for row in self.board]
         return state
 
     def make_move(self, row, col):
-        """
-        Attempts to make a move at the specified position.
-        
-        Args:
-            row (int): Row index
-            col (int): Column index
-            
-        Returns:
-            bool: True if move was successful, False if invalid
-        
-        Side effects:
-            - Updates the board state
-            - Adds move to history
-            - Switches current player
-            - Records board state for replay
-        """
-        if self.paused or self.game_over or self.board[row][col] != 0: return False # Check paused state
+        """Makes a move at the specified position"""
+        if self.paused or self.game_over or self.board[row][col] != 0:
+            return False
         
         self.board[row][col] = 1 if self.is_black_turn else 2
         player_color = "Blue" if self.is_black_turn else "Red"
         move_notation = f"{self.col_labels[col]}{self.row_labels[row]}"
         self.moves_history.append(f"{player_color}: {move_notation}")
         
-        # Print the move to console
-        lowercase_color = player_color.lower()
-        print(f"{move_notation} - {lowercase_color}")
-        
         self.move_count += 1
-        if self.move_count == 1: self.first_move = (row, col)
+        if self.move_count == 1:
+            self.first_move = (row, col)
             
         self.is_black_turn = not self.is_black_turn
         self.board_states.append([row[:] for row in self.board])
@@ -86,66 +53,35 @@ class HexGame:
         return True
         
     def swap_move(self):
-        """
-        Implements the "pie rule" (swap rule) in Hex.
-        After the first move, the second player can choose to swap positions,
-        taking the first player's position and color.
-        
-        Returns:
-            bool: True if the swap was successful, False otherwise
-        """
-        if self.paused or self.move_count != 1 or self.is_black_turn: return False # Check paused state
+        """Implements the pie rule (swap)"""
+        if self.paused or self.move_count != 1 or self.is_black_turn:
+            return False
 
-        row, col = self.first_move # Get the original first move coordinates
-
-        # Correct swap logic: Change the original piece to Red (2)
+        row, col = self.first_move
+        # Change original piece to Red (2)
         self.board[row][col] = 2
-        # Mirrored position logic removed
-
-        # Update move notation to reflect the *original* position being taken by Red
+        
         move_notation = f"{self.col_labels[col]}{self.row_labels[row]}"
         self.moves_history.append(f"Red: Swap ({move_notation})")
-
-        # Print the swap move to console (using the original location)
-        print(f"{move_notation} - red (swap)")
-
+        
         self.move_count += 1
         self.is_black_turn = not self.is_black_turn
-        self.board_states.append([row[:] for row in self.board]) # Save state after swap
-        self.current_view_index = -1 # Reset history view
+        self.board_states.append([row[:] for row in self.board])
+        self.current_view_index = -1
         return True
 
     def check_winner(self):
-        """
-        Checks if either player has won by connecting their sides.
-        Blue (Player 1) wins by connecting top and bottom.
-        Red (Player 2) wins by connecting left and right.
-        
-        Returns:
-            int or None: 1 for Blue win, 2 for Red win, None if no winner
-        """
-        # --- DEBUG PRINT --- Print board state before checking win
-        print("--- Checking Winner ---")
-        print(f"Current Player Check: {1 if self.is_black_turn else 2}") # Note: This might be confusing, check_winner checks *both*
-        print("Board State Being Checked:")
-        for r_idx, row in enumerate(self.board):
-            print(f"  {r_idx}: {row}")
-        # ---------------------
-
+        """Checks if either player has won"""
         if back.check_win(self.board, 1):
-            print("DEBUG: back.check_win(board, 1) returned True") # Add debug print
             self.game_over, self.winner = True, 1
             return 1
         elif back.check_win(self.board, 2):
-            print("DEBUG: back.check_win(board, 2) returned True") # Add debug print
             self.game_over, self.winner = True, 2
             return 2
         return None
 
     def reset(self):
-        """
-        Resets the game to its initial state
-        """
+        """Resets the game to initial state"""
         self.board = [[0] * self.size for _ in range(self.size)]
         self.is_black_turn = True
         self.moves_history = []
@@ -156,11 +92,11 @@ class HexGame:
         self.board_states = []
         self.current_view_index = -1
         self.viewing_history = False
-        self.paused = False # Reset paused state
+        self.paused = False
 
     def toggle_pause(self):
-        """ Toggles the paused state of the game. """
-        if not self.game_over: # Only allow pausing if game is not over
+        """Toggles pause state"""
+        if not self.game_over:
             self.paused = not self.paused
             return self.paused
         return False
@@ -272,21 +208,21 @@ class HexBoard(QWidget):
         return vertices
 
     def mousePressEvent(self, event):
-        if self.game.paused: # Prevent clicks if paused
+        if self.game.paused:
             return
 
-        # Allow clicks if game is not over, not viewing history, AND
-        # (mode is PvA and it's Blue's turn) OR (mode is PvP and it's the current player's turn)
+        # Handle clicks based on game mode
         allow_click = False
         if not self.game.game_over and not self.game.viewing_history:
             if self.main_window.game_mode == "PvA" and self.game.is_black_turn:
                 allow_click = True
             elif self.main_window.game_mode == "PvP":
-                allow_click = True # Both players click, make_move checks turn internally implicitly
+                allow_click = True
 
         if not allow_click:
             return
 
+        # Find which hex was clicked
         widget_center_x = self.width() / 2
         widget_center_y = self.height() / 2 + 12
         
@@ -300,16 +236,16 @@ class HexBoard(QWidget):
         for row in range(self.game.size):
             for col in range(self.game.size):
                 hex_x, hex_y = self.get_hex_position(row, col, widget_center_x, widget_center_y, 
-                                                   hex_width, hex_height)
+                                                    hex_width, hex_height)
                 distance = (x - hex_x) ** 2 + (y - hex_y) ** 2
                 
                 if distance < min_distance and distance < (self.cell_size ** 2 * 1.5):
                     min_distance = distance
                     closest_row, closest_col = row, col
         
-        # Check if a valid hex cell was clicked
+        # Process the move if a hex was clicked
         if closest_row >= 0 and closest_col >= 0:
-            # --- PvP Swap Logic --- Check if Red player clicked on Blue's first move to swap
+            # Handle swap rule in PvP mode
             is_pvp = self.main_window.game_mode == "PvP"
             is_second_move = self.game.move_count == 1
             is_red_turn = not self.game.is_black_turn
@@ -319,35 +255,21 @@ class HexBoard(QWidget):
             if is_pvp and is_second_move and is_red_turn and clicked_first_move:
                 move_successful = self.game.swap_move()
             else:
-                # --- Regular Move Logic ---
                 move_successful = self.game.make_move(closest_row, closest_col)
-            # -------------------------
 
-            # User (Blue or Red in PvP) makes a move or swaps
             if move_successful:
                 self.update()
+                self.main_window.update_navigation_buttons()
+                self.main_window.update_turn_label()
 
-                # Update navigation buttons state immediately
-                if hasattr(self.main_window, "update_navigation_buttons"):
-                    self.main_window.update_navigation_buttons()
-
-                # Update turn label immediately after user move
-                if hasattr(self.main_window, "update_turn_label"):
-                    self.main_window.update_turn_label()
-
-                # Check if user won
+                # Check for win condition
                 winner = self.game.check_winner()
                 if winner:
-                    # Use the helper function to show the winner message
                     self._show_winner_message(winner)
-                    if hasattr(self.main_window, "update_game_status"):
-                        self.main_window.update_game_status()
-                else:
-                    # Only trigger AI if in PvA mode and it's now AI's (Red's) turn
-                    if self.main_window.game_mode == "PvA" and not self.game.is_black_turn:
-                        QTimer.singleShot(500, self.trigger_ai_move)
-                    # In PvP mode, do nothing - wait for the next player's click.
-                    # In AvA mode, clicks are disabled anyway.
+                    self.main_window.update_game_status()
+                # Trigger AI move if needed
+                elif self.main_window.game_mode == "PvA" and not self.game.is_black_turn:
+                    QTimer.singleShot(500, self.trigger_ai_move)
 
     def draw_labels(self, painter, widget_center_x, widget_center_y, hex_width, hex_height):
         bold_font = QFont("Arial", 10)
@@ -365,73 +287,56 @@ class HexBoard(QWidget):
             y = widget_center_y + (0 + row - self.game.size + 1) * (hex_height * 0.5) - 8
             painter.drawText(int(x), int(y), str(self.game.row_labels[row]))
 
-    # Renamed from ai_move, now handles AI move for the CURRENT player
     def trigger_ai_move(self):
-        if self.game.paused or self.game.game_over: # Prevent AI moves if paused or game over
+        """Handles AI moves"""
+        if self.game.paused or self.game.game_over:
             return
 
-        ai_depth = self.main_window.current_ai_depth if hasattr(self.main_window, "current_ai_depth") else 3
+        ai_depth = self.main_window.current_ai_depth
         current_player = 1 if self.game.is_black_turn else 2
 
-        # --- Swap Logic (Only relevant for Red on move 2) ---
-        if self.game.move_count == 1 and current_player == 2: # Red's first potential move
+        # Handle swap rule for AI (Red's second move)
+        if self.game.move_count == 1 and current_player == 2:
             row, col = self.game.first_move
             center = self.game.size // 2
-            # Basic swap logic: swap if Blue's first move is near center
+            # Swap if first move was advantageous (near center)
             if abs(row - center) <= 1 and abs(col - center) <= 1:
                 if self.game.swap_move():
                     self.update()
                     winner = self.game.check_winner()
-                    if winner: self._show_winner_message(winner)
-                    # Update turn label after potential swap
-                    if hasattr(self.main_window, "update_turn_label"):
-                        self.main_window.update_turn_label()
+                    if winner:
+                        self._show_winner_message(winner)
+                    self.main_window.update_turn_label()
 
-                    # If swap occurred in AvA mode, trigger next AI move (Blue)
+                    # If swap in AvA mode, trigger next AI move
                     if not self.game.game_over and self.main_window.game_mode == "AvA":
                         QTimer.singleShot(500, self.trigger_ai_move)
-                    return # Swap was made, AI doesn't need to move this turn
-        # --- End Swap Logic ---
+                    return
 
-        # Get the best move from the backend alpha-beta implementation
-        current_state = self.game.to_python_state() # Get HexState object for the backend
+        # Get best move from AI
+        current_state = self.game.to_python_state()
         best_move = back.find_best_move(current_state, depth=ai_depth)
 
-        if best_move != (-1, -1): # Check if a valid move was found
+        if best_move != (-1, -1):
             if self.game.make_move(best_move[0], best_move[1]):
                 self.update()
-
-                # Update navigation buttons state immediately
-                if hasattr(self.main_window, "update_navigation_buttons"):
-                    self.main_window.update_navigation_buttons()
-
-                # Update turn label after AI move
-                if hasattr(self.main_window, "update_turn_label"):
-                    self.main_window.update_turn_label()
+                self.main_window.update_navigation_buttons()
+                self.main_window.update_turn_label()
 
                 winner = self.game.check_winner()
                 if winner:
-                    self._show_winner_message(winner) # Use helper for message box
-                    if hasattr(self.main_window, "update_game_status"):
-                        self.main_window.update_game_status()
-                elif self.main_window.game_mode == "AvA": # If game not over and in AvA mode, trigger next AI
+                    self._show_winner_message(winner)
+                    self.main_window.update_game_status()
+                elif self.main_window.game_mode == "AvA":
                     QTimer.singleShot(500, self.trigger_ai_move)
-            else:
-                # Fallback if alpha-beta suggested an invalid move
-                print(f"AI ({current_player}) suggested an invalid move: {best_move}")
-                # Optionally, fall back to random move or stop in AvA?
-                # For now, just print and stop the AvA chain if error occurs
-        else:
-             print(f"AI ({current_player}) could not find a valid move.") # Or game ended before AI move
 
-    # Helper function to show winner message (generalized for modes)
     def _show_winner_message(self, winner):
-        # Determine winner name based on mode
+        """Shows winner message dialog"""
         if self.main_window.game_mode == "PvP":
             winner_name = "Blue (Player)" if winner == 1 else "Red (Player)"
         elif self.main_window.game_mode == "PvA":
             winner_name = "Blue (You)" if winner == 1 else "Red (AI)"
-        else: # AvA
+        else:  # AvA
             winner_name = "Blue (AI)" if winner == 1 else "Red (AI)"
 
         msg = QMessageBox()
@@ -446,29 +351,28 @@ class HexWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Hex Game")
         self.game = HexGame(11)
-        self.ai_mode = True  # Keep true to block user clicks during Red's turn (used indirectly now)
-        self.current_ai_depth = 3 # Default AI depth (Difficult)
-        self.game_mode = "PvA" # Default game mode: Player vs AI
+        self.current_ai_depth = 3  # Default AI depth (Difficult)
+        self.game_mode = "PvA"     # Default game mode: Player vs AI
         
-        # Increase minimum window size
         self.setMinimumSize(QSize(1200, 850))
         self.setup_ui()
 
     def setup_ui(self):
+        """Creates and arranges all UI elements"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
 
+        # Left panel containing board and controls
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         
+        # Board widget
         self.board_widget = HexBoard(self.game, main_window=self)
         left_layout.addWidget(self.board_widget)
-        left_layout.addStretch(1) # Keep stretch below board
-
-        # Add stretch factor *before* controls to push them down
         left_layout.addStretch(1)
 
+        # Game status area
         controls_panel = QWidget()
         controls_layout = QFormLayout(controls_panel)
         
@@ -481,46 +385,44 @@ class HexWindow(QMainWindow):
         self.game_status.setAlignment(Qt.AlignCenter)
         controls_layout.addRow(self.game_status)
         
-        # Remove AI Difficulty from controls panel - will move to a horizontal layout later
         left_layout.addWidget(controls_panel)
 
-        # --- Add Pause Button ---
+        # Game control buttons
         self.pause_button = QPushButton("Pause Game")
         self.pause_button.clicked.connect(self.toggle_pause)
         left_layout.addWidget(self.pause_button)
-        # ------------------------
 
         reset_button = QPushButton("New Game")
         reset_button.clicked.connect(self.reset_game)
         left_layout.addWidget(reset_button)
         
-        # Create a horizontal layout for game settings
+        # Game settings layout
         settings_layout = QHBoxLayout()
         settings_layout.setAlignment(Qt.AlignCenter)
         
-        # --- Add AI Difficulty dropdown to settings layout ---
+        # AI Difficulty settings
         difficulty_layout = QHBoxLayout()
         difficulty_label = QLabel("AI Difficulty:")
         difficulty_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.difficulty_combo = QComboBox()
         self.difficulty_combo.addItems(["Easy", "Medium", "Difficult"])
-        # Map depth to initial text selection
+        
+        # Set initial difficulty text
         if self.current_ai_depth == 1:
             initial_difficulty_text = "Easy"
         elif self.current_ai_depth == 2:
             initial_difficulty_text = "Medium"
-        else: # Default to Difficult for 3 or other values
+        else:
             initial_difficulty_text = "Difficult"
-            self.current_ai_depth = 3 # Ensure depth matches text
+        
         self.difficulty_combo.setCurrentText(initial_difficulty_text)
         self.difficulty_combo.setMinimumWidth(100)
         self.difficulty_combo.currentIndexChanged.connect(self.update_ai_difficulty)
         difficulty_layout.addWidget(difficulty_label)
         difficulty_layout.addWidget(self.difficulty_combo)
         settings_layout.addLayout(difficulty_layout)
-        # ------------------------------------------------------
         
-        # Add Game Mode Selection
+        # Game Mode selection
         mode_layout = QHBoxLayout()
         mode_label = QLabel("Game Mode:")
         mode_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -534,11 +436,12 @@ class HexWindow(QMainWindow):
         
         left_layout.addLayout(settings_layout)
         
+        # Game rules label
         rules_label = QLabel("Blue: Connect blue borders • Red: Connect red borders")
         rules_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(rules_label)
 
-        # --- RE-ADD Navigation Buttons --- 
+        # Move navigation buttons
         navigation_layout = QHBoxLayout()
         self.prev_move_button = QPushButton("Previous Move")
         self.prev_move_button.clicked.connect(self.show_previous_move)
@@ -547,50 +450,52 @@ class HexWindow(QMainWindow):
         navigation_layout.addWidget(self.prev_move_button)
         navigation_layout.addWidget(self.next_move_button)
         left_layout.addLayout(navigation_layout)
-        # ---------------------------------
 
         self.view_label = QLabel("Current view: Latest move")
         self.view_label.setAlignment(Qt.AlignCenter)
         left_layout.addWidget(self.view_label)
 
         main_layout.addWidget(left_panel)
-        
         main_layout.setStretch(0, 1)
+        
+        # Initialize UI state
+        self.update_turn_label()
+        self.update_navigation_buttons()
 
     def update_game_status(self):
+        """Updates game status display"""
         if self.game.game_over:
             self.game_status.setText("Game Over")
             self.game_status.setStyleSheet("font-weight: bold; color: lightgray;")
-            self.pause_button.setEnabled(True) # Disable pause when game over
+            self.pause_button.setEnabled(False)
         elif self.game.paused:
-            self.game_status.setText("")
+            self.game_status.setText("Paused")
             self.game_status.setStyleSheet("font-weight: bold; color: yellow;")
         else:
             self.game_status.setText("")
             self.game_status.setStyleSheet("")
+            self.pause_button.setEnabled(True)
 
     def reset_game(self):
-        if self.game.paused: # Ensure game is resumed before reset
+        """Resets the game and UI"""
+        if self.game.paused:
             self.toggle_pause()
         self.game.reset()
-        self.board_widget.game = self.game
         self.board_widget.update()
         self.turn_label.setStyleSheet("font-weight: bold; color: white;")
         self.game_status.setText("")
-        self.difficulty_combo.setEnabled(True) # Re-enable combo on new game
-        self.pause_button.setText("Pause Game") # Reset button text
-        # Reset viewing history state
-        self.game.current_view_index = -1
-        self.game.viewing_history = False
+        self.difficulty_combo.setEnabled(True)
+        self.pause_button.setText("Pause Game")
+        self.pause_button.setEnabled(True)
         self.update_navigation_buttons()
-        self.update_turn_label() # Update label for Blue's turn
+        self.update_turn_label()
 
-        # If mode is AI vs AI, start the game loop
+        # Start AI vs AI game if in that mode
         if self.game_mode == "AvA":
-            # Need a small delay to allow UI to settle before AI starts
             QTimer.singleShot(500, self.board_widget.trigger_ai_move)
 
     def show_previous_move(self):
+        """Shows the previous move in history"""
         if not self.game.board_states:
             return
             
@@ -605,6 +510,7 @@ class HexWindow(QMainWindow):
             self.update_navigation_buttons()
             
     def show_next_move(self):
+        """Shows the next move in history"""
         if not self.game.board_states:
             return
             
@@ -620,6 +526,7 @@ class HexWindow(QMainWindow):
             self.update_navigation_buttons()
 
     def update_navigation_buttons(self):
+        """Updates the state of move navigation buttons"""
         if not self.game.board_states:
             self.prev_move_button.setEnabled(False)
             self.next_move_button.setEnabled(False)
@@ -627,7 +534,7 @@ class HexWindow(QMainWindow):
             return
             
         if self.game.current_view_index == -1:
-            self.prev_move_button.setEnabled(len(self.game.board_states) > 0)
+            self.prev_move_button.setEnabled(True)
             self.next_move_button.setEnabled(False)
             self.view_label.setText("Current view: Latest move")
         else:
@@ -636,107 +543,99 @@ class HexWindow(QMainWindow):
             self.view_label.setText(f"Current view: Move #{self.game.current_view_index + 1}")
 
     def update_turn_label(self):
+        """Updates the turn indicator label"""
         if self.game.paused:
             self.turn_label.setText("Game Paused")
             self.turn_label.setStyleSheet("font-weight: bold; color: yellow;")
             return
 
         if self.game.game_over:
-            # Determine winner name based on mode
+            # Show winner
             if self.game_mode == "PvP":
-                 winner_name = "Blue (Player)" if self.game.winner == 1 else "Red (Player)"
+                winner_name = "Blue (Player)" if self.game.winner == 1 else "Red (Player)"
             elif self.game_mode == "PvA":
-                 winner_name = "Blue (You)" if self.game.winner == 1 else "Red (AI)"
-            else: # AvA mode
-                 winner_name = "Blue (AI)" if self.game.winner == 1 else "Red (AI)"
+                winner_name = "Blue (You)" if self.game.winner == 1 else "Red (AI)"
+            else:  # AvA mode
+                winner_name = "Blue (AI)" if self.game.winner == 1 else "Red (AI)"
+                
             self.turn_label.setText(f"{winner_name} Wins!")
-            # Use lighter shades for winner announcement
-            winner_color = "lightblue" if self.game.winner == 1 else "lightcoral" # Lighter blue/red
+            winner_color = "lightblue" if self.game.winner == 1 else "lightcoral"
             self.turn_label.setStyleSheet(f"font-weight: bold; color: {winner_color}; font-size: 14px;")
         else:
+            # Show current turn
             is_blue = self.game.is_black_turn
-            # Determine player name based on mode and turn
             if self.game_mode == "PvP":
                 player_name = "Blue's Turn" if is_blue else "Red's Turn"
             elif self.game_mode == "PvA":
                 player_name = "Blue's Turn" if is_blue else "Red (AI Thinking...)"
-            else: # AvA mode
+            else:  # AvA mode
                 player_name = "Blue (AI Thinking...)" if is_blue else "Red (AI Thinking...)"
+                
             self.turn_label.setText(player_name)
-            # Use lighter shades for turn indicator
-            turn_color = "lightblue" if is_blue else "lightcoral" # Lighter blue/red
+            turn_color = "lightblue" if is_blue else "lightcoral"
             self.turn_label.setStyleSheet(f"font-weight: bold; color: {turn_color};")
+            
+        self.update_game_status()
 
-    # Slot to update AI difficulty when combo box changes
     def update_ai_difficulty(self, index):
+        """Updates the AI difficulty level"""
         difficulty_text = self.difficulty_combo.itemText(index)
-        # Map text to depth
         if difficulty_text == "Easy":
             new_depth = 1
         elif difficulty_text == "Medium":
             new_depth = 2
-        else: # Difficult
+        else:  # Difficult
             new_depth = 3
 
-        # Check if game is in progress and value actually changed
+        # Confirm reset if game in progress
         if self.game.move_count > 0 and new_depth != self.current_ai_depth:
             msg_box = QMessageBox()
             msg_box.setIcon(QMessageBox.Warning)
             msg_box.setWindowTitle("Confirm Difficulty Change")
             msg_box.setText("Changing the AI difficulty will reset the current game.")
             msg_box.setInformativeText(f"Do you want to reset the game to '{difficulty_text}' difficulty?")
-            reset_button = msg_box.addButton("Reset Game", QMessageBox.AcceptRole) # Yes
-            cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)    # No
+            reset_button = msg_box.addButton("Reset Game", QMessageBox.AcceptRole)
+            cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)
             msg_box.setDefaultButton(cancel_button)
 
             msg_box.exec_()
 
             if msg_box.clickedButton() == reset_button:
-                # User confirmed reset
                 self.current_ai_depth = new_depth
-                self.reset_game() # reset_game handles UI state
+                self.reset_game()
             else:
-                # User cancelled - revert combo box value visually
-                # Determine current difficulty text based on self.current_ai_depth
-                if self.current_ai_depth == 1:
-                    current_difficulty_text = "Easy"
-                elif self.current_ai_depth == 2:
-                    current_difficulty_text = "Medium"
-                else: # 3
-                    current_difficulty_text = "Difficult"
-
-                self.difficulty_combo.blockSignals(True)
-                self.difficulty_combo.setCurrentText(current_difficulty_text)
-                self.difficulty_combo.blockSignals(False)
+                # Revert combo box if canceled
+                self._update_difficulty_combo_value()
         else:
-             # Game not started or value is the same, just update internal depth
+            # Just update if game not started
             self.current_ai_depth = new_depth
-            # Ensure combo box reflects the value if game hasn't started
             if self.game.move_count == 0:
-                # Determine current difficulty text based on self.current_ai_depth
-                if self.current_ai_depth == 1:
-                    current_difficulty_text = "Easy"
-                elif self.current_ai_depth == 2:
-                    current_difficulty_text = "Medium"
-                else: # 3
-                    current_difficulty_text = "Difficult"
+                self._update_difficulty_combo_value()
+                
+    def _update_difficulty_combo_value(self):
+        """Updates difficulty combo value without triggering signals"""
+        if self.current_ai_depth == 1:
+            current_difficulty_text = "Easy"
+        elif self.current_ai_depth == 2:
+            current_difficulty_text = "Medium"
+        else:  # 3
+            current_difficulty_text = "Difficult"
+            
+        self.difficulty_combo.blockSignals(True)
+        self.difficulty_combo.setCurrentText(current_difficulty_text)
+        self.difficulty_combo.blockSignals(False)
 
-                self.difficulty_combo.blockSignals(True)
-                self.difficulty_combo.setCurrentText(current_difficulty_text)
-                self.difficulty_combo.blockSignals(False)
-
-    # Slot to change game mode when combo box changes
     def change_game_mode(self, index):
+        """Changes the game mode"""
         new_mode_text = self.mode_combo.itemText(index)
-        # Map text to mode identifier
         if new_mode_text == "Player vs Player":
             new_mode = "PvP"
         elif new_mode_text == "Player vs AI":
             new_mode = "PvA"
-        else: # "AI vs AI"
+        else:  # "AI vs AI"
             new_mode = "AvA"
 
-        # Check if game is in progress and mode actually changed
+        # Confirm reset if game in progress
         if self.game.move_count > 0 and new_mode != self.game_mode:
             msg_box = QMessageBox()
             msg_box.setIcon(QMessageBox.Warning)
@@ -750,45 +649,37 @@ class HexWindow(QMainWindow):
             msg_box.exec_()
 
             if msg_box.clickedButton() == reset_button:
-                # User confirmed reset
                 self.game_mode = new_mode
                 self.reset_game()
             else:
-                # User cancelled - revert combo box value visually
-                # Determine current mode text based on self.game_mode
-                if self.game_mode == "PvP":
-                    current_mode_text = "Player vs Player"
-                elif self.game_mode == "PvA":
-                    current_mode_text = "Player vs AI"
-                else: # AvA
-                    current_mode_text = "AI vs AI"
-                self.mode_combo.blockSignals(True)
-                self.mode_combo.setCurrentText(current_mode_text)
-                self.mode_combo.blockSignals(False)
+                # Revert combo box if canceled
+                self._update_mode_combo_value()
         else:
-            # Game not started or mode is the same, just update
+            # Just update if game not started
             self.game_mode = new_mode
-            # If game hasn't started, ensure combo reflects the mode
             if self.game.move_count == 0:
-                # Determine current mode text based on self.game_mode
-                if self.game_mode == "PvP":
-                    current_mode_text = "Player vs Player"
-                elif self.game_mode == "PvA":
-                    current_mode_text = "Player vs AI"
-                else: # AvA
-                    current_mode_text = "AI vs AI"
-                self.mode_combo.blockSignals(True)
-                self.mode_combo.setCurrentText(current_mode_text)
-                self.mode_combo.blockSignals(False)
+                self._update_mode_combo_value()
+                
+    def _update_mode_combo_value(self):
+        """Updates mode combo value without triggering signals"""
+        if self.game_mode == "PvP":
+            current_mode_text = "Player vs Player"
+        elif self.game_mode == "PvA":
+            current_mode_text = "Player vs AI"
+        else:  # AvA
+            current_mode_text = "AI vs AI"
+            
+        self.mode_combo.blockSignals(True)
+        self.mode_combo.setCurrentText(current_mode_text)
+        self.mode_combo.blockSignals(False)
 
-    # --- Add Toggle Pause Method ---
     def toggle_pause(self):
+        """Toggles the game pause state"""
         is_now_paused = self.game.toggle_pause()
         self.pause_button.setText("Resume Game" if is_now_paused else "Pause Game")
         self.update_turn_label()
-        self.update_game_status()
         
-        # If resuming in AI mode and it's AI's turn, trigger the move
+        # Resume AI turns if needed
         if not is_now_paused and not self.game.game_over:
             if self.game_mode == "AvA":
                 QTimer.singleShot(500, self.board_widget.trigger_ai_move)
