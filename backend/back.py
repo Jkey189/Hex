@@ -25,6 +25,8 @@ setup(
 
 # C++ acceleration module import
 try:
+    # Make sure to build the module first with:
+    # python3 -m pip install -e .
     import hex_cpp
     USE_CPP_IMPLEMENTATION = True
 except ImportError:
@@ -35,7 +37,9 @@ except ImportError:
         try:
             import alpha_beta_pruning as hex_cpp
             USE_CPP_IMPLEMENTATION = True
+            print("C++ acceleration module available successfully")
         except ImportError:
+            print("Warning: C++ acceleration module not available, using Python implementation")
             USE_CPP_IMPLEMENTATION = False
 
 # Hex grid neighbor directions (6 neighbors)
