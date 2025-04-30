@@ -4,6 +4,25 @@ from collections import deque
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "alpha-beta pruning"))
 
+
+from setuptools import setup, Extension
+import pybind11
+
+cpp_module = Extension(
+    'hex_cpp',
+    sources=['alpha-beta-pruning.cpp'],
+    include_dirs=[pybind11.get_include()],
+    language='c++',
+    extra_compile_args=['-std=c++17']
+)
+
+setup(
+    name="hex_cpp",
+    version="0.1",
+    ext_modules=[cpp_module],
+)
+
+
 # C++ acceleration module import
 try:
     import hex_cpp

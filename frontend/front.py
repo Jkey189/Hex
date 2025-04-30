@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys, math, os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                            QPushButton, QLabel, QFormLayout, QMessageBox, QComboBox)
