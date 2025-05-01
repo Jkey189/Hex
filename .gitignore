@@ -1,3 +1,6 @@
 /.vscode
+
 /backend/__pycache__
 /frontend/__pycache__
+
+/backend/alpha-beta pruning/hex_cpp.cpython-313-darwin.so.dSYM/Contents/Resources
