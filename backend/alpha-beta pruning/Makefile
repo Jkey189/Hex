@@ -1,17 +1,20 @@
 CXX = clang++
-CXXFLAGS = -std=c++17 -O3 -Wall -shared -fPIC -undefined dynamic_lookup
+CXXFLAGS = -std=c++17 -O3 -Wall -shared -fPIC
 PYTHON_INCLUDES = $(shell python3 -m pybind11 --includes)
 EXTENSION_SUFFIX = $(shell python3-config --extension-suffix)
+PYTHON_LDFLAGS = $(shell python3-config --ldflags)
 
 TARGET = hex_cpp$(EXTENSION_SUFFIX)
-SOURCE = alpha-beta-pruning.cpp
 
 all: $(TARGET)
 
-$(TARGET): $(SOURCE)
-	$(CXX) $(CXXFLAGS) $(PYTHON_INCLUDES) $(SOURCE) -o $(TARGET)
+$(TARGET): alpha-beta-pruning.cpp
+	$(CXX) $(CXXFLAGS) $(PYTHON_INCLUDES) $(PYTHON_LDFLAGS) alpha-beta-pruning.cpp -o $(TARGET)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) *.o
 
-.PHONY: all clean
+install: $(TARGET)
+	cp $(TARGET) ..
+
+.PHONY: all clean install

@@ -1,23 +1,26 @@
 // File: alpha-beta-pruning.cpp
-// Implementation of Hex game AI using alpha-beta pruning algorithm with various optimizations
-// including transposition table and move ordering
+// Implementation of Hex game AI using alpha-beta pruning algorithm with optimizations
+// including transposition table, move ordering, and virtual connection detection
 
 #include <iostream>
 #include <vector>
 #include <algorithm>
 #include <climits>
-#include <unordered_set>
 #include <unordered_map>
+#include <random>
+#include <chrono>
+#include <string>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <functional>
-#include <string>
-#include <cmath>
 
 namespace py = pybind11;
 
 // Player enum represents the state of a cell on the board
 enum Player { EMPTY = 0, PLAYER1 = 1, PLAYER2 = 2 };
+
+// Hex grid neighbor directions (6 neighbors)
+const int dx[] = {-1, -1, 0, 0, 1, 1};
+const int dy[] = {0, 1, -1, 1, -1, 0};
 
 // Hash function for the board state to use in transposition table
 struct BoardHash {
@@ -32,14 +35,14 @@ struct BoardHash {
     }
 };
 
-// Transposition table entry to cache search results
+// Transposition table entry
 struct TTEntry {
     int depth;      // Depth of the search
     int value;      // Evaluation value
     int flag;       // Flag for the type of node (0=exact, 1=lower bound, 2=upper bound)
 };
 
-// Global transposition table to cache search results for positions already evaluated
+// Global transposition table to cache search results
 std::unordered_map<std::vector<std::vector<int>>, TTEntry, BoardHash> transpositionTable;
 
 class HexBoard {
@@ -47,12 +50,19 @@ private:
     int size;
     std::vector<std::vector<Player>> board;
     
-    // Union-Find data structures need to accommodate 4 virtual nodes
+    // Union-Find data structures for path detection
     std::vector<int> parent;
     std::vector<int> rank;
     
+    // Cache for virtual connections
+    mutable std::unordered_map<std::string, bool> vcCache;
+    
+    // Random number generator for move selection
+    mutable std::mt19937 rng;
+    
+    // Union-Find helper methods
     int find(int x) {
-        if (parent[x] != x){
+        if (parent[x] != x) {
             parent[x] = find(parent[x]);
         }
         return parent[x];
@@ -64,10 +74,10 @@ private:
         
         if (rootX == rootY) return;
         
-        if (rank[rootX] < rank[rootY]){
+        if (rank[rootX] < rank[rootY]) {
             parent[rootX] = rootY;
         }
-        else if (rank[rootX] > rank[rootY]){
+        else if (rank[rootX] > rank[rootY]) {
             parent[rootY] = rootX;
         }
         else {
@@ -76,79 +86,7 @@ private:
         }
     }
     
-    bool hasWon(Player player) {
-        if (player == EMPTY) return false;
-        
-        // Resize parent/rank arrays if needed (should happen in constructor ideally,
-        // but resizing here ensures it's correct even if board size changes)
-        // Need size*size cells + 4 virtual nodes
-        if (parent.size() != size * size + 4) {
-            parent.resize(size * size + 4);
-            rank.resize(size * size + 4, 0);
-        }
-        
-        // Initialize Union-Find data structures
-        for (int i = 0; i < parent.size(); i++) {
-            parent[i] = i;
-            rank[i] = 0;
-        }
-        
-        // Define 4 distinct virtual nodes:
-        int topVirtual = size * size;      // Index for Blue's top edge
-        int bottomVirtual = size * size + 1; // Index for Blue's bottom edge
-        int leftVirtual = size * size + 2;   // Index for Red's left edge
-        int rightVirtual = size * size + 3;  // Index for Red's right edge
-        
-        // Connect all player's pieces
-        for (int i = 0; i < size; i++) {
-            for (int j = 0; j < size; j++) {
-                if (board[i][j] == player) {
-                    // Connect to appropriate virtual nodes if on the edge
-                    if (player == PLAYER1) {
-                        if (i == 0) { // Top row
-                            unionSets(i * size + j, topVirtual);
-                        }
-                        if (i == size-1) { // Bottom row
-                            unionSets(i * size + j, bottomVirtual);
-                        }
-                    } else if (player == PLAYER2) {
-                        if (j == 0) { // Leftmost column
-                            unionSets(i * size + j, leftVirtual);
-                        }
-                        if (j == size-1) { // Rightmost column
-                            unionSets(i * size + j, rightVirtual);
-                        }
-                    }
-                    
-                    // Connect to adjacent cells of the same player
-                    static const int dx[] = {-1, -1, 0, 0, 1, 1};
-                    static const int dy[] = {0, 1, -1, 1, -1, 0};
-                    
-                    for (int k = 0; k < 6; k++) {
-                        int ni = i + dx[k];
-                        int nj = j + dy[k];
-                        
-                        if (ni >= 0 && ni < size && nj >= 0 && nj < size && 
-                            board[ni][nj] == player) {
-                            unionSets(i * size + j, ni * size + nj);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Check if virtual nodes are connected
-        if (player == PLAYER1) {
-            return find(topVirtual) == find(bottomVirtual);
-        } else if (player == PLAYER2) {
-            return find(leftVirtual) == find(rightVirtual);
-        }
-        
-        return false;
-    }
-
-    mutable std::unordered_map<std::string, bool> vcCache;
-    
+    // Virtual connection detection
     bool hasVirtualConnection(int startRow, int startCol, int endRow, int endCol, Player player) const {
         std::string key = std::to_string(startRow) + "," + 
                           std::to_string(startCol) + "," + 
@@ -188,9 +126,6 @@ private:
         
         visited[r][c] = true;
         
-        static const int dx[] = {-1, -1, 0, 0, 1, 1};
-        static const int dy[] = {0, 1, -1, 1, -1, 0};
-        
         for (int k = 0; k < 6; k++) {
             int nr = r + dx[k];
             int nc = c + dy[k];
@@ -202,17 +137,56 @@ private:
         
         return false;
     }
+    
+    // Check if a move is redundant (connecting already connected pieces)
+    bool isRedundantMove(int row, int col, Player player) const {
+        std::vector<std::pair<int, int>> adjacentPlayerCells;
+        for (int k = 0; k < 6; k++) {
+            int nr = row + dx[k];
+            int nc = col + dy[k];
+            
+            if (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] == player) {
+                adjacentPlayerCells.push_back({nr, nc});
+            }
+        }
+        
+        // If there are fewer than 2 adjacent player pieces, it's not redundant
+        if (adjacentPlayerCells.size() < 2) {
+            return false;
+        }
+        
+        // Check if any pair of adjacent player cells are already connected
+        for (size_t i = 0; i < adjacentPlayerCells.size(); i++) {
+            for (size_t j = i + 1; j < adjacentPlayerCells.size(); j++) {
+                int r1 = adjacentPlayerCells[i].first;
+                int c1 = adjacentPlayerCells[i].second;
+                int r2 = adjacentPlayerCells[j].first;
+                int c2 = adjacentPlayerCells[j].second;
+                
+                if (hasVirtualConnection(r1, c1, r2, c2, player)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
 
 public:
     HexBoard(int s) : size(s) {
+        // Initialize the board
         board.resize(size, std::vector<Player>(size, EMPTY));
-        // Initialize parent/rank arrays for size*size cells + 4 virtual nodes
+        
+        // Initialize Union-Find data structures for size*size cells + 4 virtual nodes
         parent.resize(size * size + 4);
         rank.resize(size * size + 4, 0);
         
         for (int i = 0; i < size * size + 4; i++) {
             parent[i] = i;
         }
+        
+        // Initialize random number generator with time-based seed
+        rng.seed(std::chrono::system_clock::now().time_since_epoch().count());
     }
     
     void setBoard(const std::vector<std::vector<int>>& pyBoard) {
@@ -256,155 +230,68 @@ public:
         }
     }
     
-    std::vector<std::pair<int, int>> getOrderedMoves(Player player) const {
-        std::vector<std::pair<std::pair<int, int>, int>> scoredMoves;
+    bool hasWon(Player player) {
+        if (player == EMPTY) return false;
         
+        // Initialize Union-Find data structures
+        for (int i = 0; i < parent.size(); i++) {
+            parent[i] = i;
+            rank[i] = 0;
+        }
+        
+        // Define 4 virtual nodes:
+        int topVirtual = size * size;      // For Blue's top edge
+        int bottomVirtual = size * size + 1; // For Blue's bottom edge
+        int leftVirtual = size * size + 2;   // For Red's left edge
+        int rightVirtual = size * size + 3;  // For Red's right edge
+        
+        // Connect all player's pieces
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
-                if (board[i][j] == EMPTY) {
-                    int score = calculateMoveScore(i, j, player);
-                    scoredMoves.push_back({{i, j}, score});
-                }
-            }
-        }
-        
-        std::sort(scoredMoves.begin(), scoredMoves.end(), 
-                 [](const auto& a, const auto& b) { return a.second > b.second; });
-                 
-        std::vector<std::pair<int, int>> orderedMoves;
-        for (const auto& scoredMove : scoredMoves) {
-            orderedMoves.push_back(scoredMove.first);
-        }
-        
-        return orderedMoves;
-    }
-    
-    int calculateMoveScore(int row, int col, Player player) const {
-        int score = 0;
-        
-        HexBoard tempBoard = *this;
-        tempBoard.makeMove(row, col, player);
-        if (tempBoard.checkWin(player)) {
-            return 10000;
-        }
-        
-        // Check if the move would be redundant (connecting already connected pieces)
-        if (isRedundantMove(row, col, player)) {
-            score -= 15;  // Penalize redundant moves
-        }
-        
-        int centerDist = std::abs(row - size/2) + std::abs(col - size/2);
-        score += (size - centerDist);
-        
-        static const int dx[] = {-1, -1, 0, 0, 1, 1};
-        static const int dy[] = {0, 1, -1, 1, -1, 0};
-        
-        int connectionsToSame = 0;
-        
-        for (int k = 0; k < 6; k++) {
-            int nr = row + dx[k];
-            int nc = col + dy[k];
-            
-            if (nr >= 0 && nr < size && nc >= 0 && nc < size) {
-                if (board[nr][nc] == player) {
-                    connectionsToSame += 3;
-                    score += 3;
-                } else if (board[nr][nc] == EMPTY) {
-                    score += 1;
-                }
-            }
-        }
-        
-        if (player == PLAYER1) {
-            score += (size - std::abs(col - size/2));
-        } else {
-            score += (size - std::abs(row - size/2));
-        }
-        
-        for (int k = 0; k < 6; k++) {
-            int nr1 = row + dx[k];
-            int nc1 = col + dy[k];
-            
-            if (nr1 >= 0 && nr1 < size && nc1 >= 0 && nc1 < size && board[nr1][nc1] == player) {
-                for (int l = k+1; l < 6; l++) {
-                    int nr2 = row + dx[l];
-                    int nc2 = col + dy[l];
+                if (board[i][j] == player) {
+                    // Connect to appropriate virtual nodes if on the edge
+                    if (player == PLAYER1) {  // Blue player
+                        if (i == 0) {  // Top row
+                            unionSets(i * size + j, topVirtual);
+                        }
+                        if (i == size-1) {  // Bottom row
+                            unionSets(i * size + j, bottomVirtual);
+                        }
+                    } else if (player == PLAYER2) {  // Red player
+                        if (j == 0) {  // Leftmost column
+                            unionSets(i * size + j, leftVirtual);
+                        }
+                        if (j == size-1) {  // Rightmost column
+                            unionSets(i * size + j, rightVirtual);
+                        }
+                    }
                     
-                    if (nr2 >= 0 && nr2 < size && nc2 >= 0 && nc2 < size && 
-                        board[nr2][nc2] == player) {
-                        score += 5;
+                    // Connect to adjacent cells of the same player
+                    for (int k = 0; k < 6; k++) {
+                        int ni = i + dx[k];
+                        int nj = j + dy[k];
+                        
+                        if (ni >= 0 && ni < size && nj >= 0 && nj < size && 
+                            board[ni][nj] == player) {
+                            unionSets(i * size + j, ni * size + nj);
+                        }
                     }
                 }
             }
         }
         
+        // Check if virtual nodes are connected
         if (player == PLAYER1) {
-            for (int j = 0; j < size; j++) {
-                if (board[0][j] == player) {
-                    for (int k = 0; k < size; k++) {
-                        if (board[size-1][k] == player && 
-                            hasVirtualConnection(0, j, size-1, k, player)) {
-                            score += 4;
-                        }
-                    }
-                }
-            }
-        } else {
-            for (int i = 0; i < size; i++) {
-                if (board[i][0] == player) {
-                    for (int k = 0; k < size; k++) {
-                        if (board[k][size-1] == player && 
-                            hasVirtualConnection(i, 0, k, size-1, player)) {
-                            score += 4;
-                        }
-                    }
-                }
-            }
-        }
-        
-        return score;
-    }
-    
-    bool isRedundantMove(int row, int col, Player player) const {
-        // This function checks if placing a piece at (row, col) would
-        // create a redundant connection (i.e., connecting pieces that
-        // are already connected through another path)
-        
-        static const int dx[] = {-1, -1, 0, 0, 1, 1};
-        static const int dy[] = {0, 1, -1, 1, -1, 0};
-        
-        // Find all adjacent cells that have player's pieces
-        std::vector<std::pair<int, int>> adjacentPlayerCells;
-        for (int k = 0; k < 6; k++) {
-            int nr = row + dx[k];
-            int nc = col + dy[k];
-            
-            if (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc] == player) {
-                adjacentPlayerCells.push_back({nr, nc});
-            }
-        }
-        
-        // If there are fewer than 2 adjacent player pieces, it's not redundant
-        if (adjacentPlayerCells.size() < 2) {
-            return false;
-        }
-        
-        // Check if any pair of adjacent player cells are already connected
-        for (size_t i = 0; i < adjacentPlayerCells.size(); i++) {
-            for (size_t j = i + 1; j < adjacentPlayerCells.size(); j++) {
-                int r1 = adjacentPlayerCells[i].first;
-                int c1 = adjacentPlayerCells[i].second;
-                int r2 = adjacentPlayerCells[j].first;
-                int c2 = adjacentPlayerCells[j].second;
-                
-                // Check if there's already a path connecting these two cells
-                if (hasVirtualConnection(r1, c1, r2, c2, player)) {
-                    return true;
-                }
-            }
+            return find(topVirtual) == find(bottomVirtual);
+        } else if (player == PLAYER2) {
+            return find(leftVirtual) == find(rightVirtual);
         }
         
         return false;
+    }
+    
+    bool checkWin(Player player) const {
+        return const_cast<HexBoard*>(this)->hasWon(player);
     }
     
     std::vector<std::pair<int, int>> getEmptyCells() const {
@@ -419,201 +306,201 @@ public:
         return emptyCells;
     }
     
-    bool isGameOver() const {
-        for (int player = PLAYER1; player <= PLAYER2; player++) {
-            if (const_cast<HexBoard*>(this)->hasWon(static_cast<Player>(player))) {
-                return true;
-            }
-        }
+    std::vector<std::pair<int, int>> getOrderedMoves(Player player) const {
+        std::vector<std::pair<std::pair<int, int>, int>> scoredMoves;
         
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
                 if (board[i][j] == EMPTY) {
-                    return false;
+                    int score = calculateMoveScore(i, j, player);
+                    scoredMoves.push_back({{i, j}, score});
                 }
             }
         }
         
-        return true;
-    }
-    
-    bool checkWin(Player player) const {
-        return const_cast<HexBoard*>(this)->hasWon(player);
-    }
-    
-    int evaluate(Player maximizingPlayer) const {
-        if (const_cast<HexBoard*>(this)->hasWon(maximizingPlayer)) {
-            return 1000;
+        // Sort by score in descending order
+        std::sort(scoredMoves.begin(), scoredMoves.end(), 
+                 [](const auto& a, const auto& b) { return a.second > b.second; });
+                 
+        std::vector<std::pair<int, int>> orderedMoves;
+        for (const auto& scoredMove : scoredMoves) {
+            orderedMoves.push_back(scoredMove.first);
         }
         
-        Player opponent = (maximizingPlayer == PLAYER1) ? PLAYER2 : PLAYER1;
-        if (const_cast<HexBoard*>(this)->hasWon(opponent)) {
-            return -1000;
-        }
-        
-        return advancedEvaluatePosition(maximizingPlayer);
+        return orderedMoves;
     }
     
-    int advancedEvaluatePosition(Player player) const {
-        if (player == EMPTY) return 0;
-        
-        Player opponent = (player == PLAYER1) ? PLAYER2 : PLAYER1;
+    int calculateMoveScore(int row, int col, Player player) const {
         int score = 0;
         
-        int playerPieces = 0;
-        int opponentPieces = 0;
-        for (int i = 0; i < size; i++) {
-            for (int j = 0; j < size; j++) {
-                if (board[i][j] == player) playerPieces++;
-                else if (board[i][j] == opponent) opponentPieces++;
-            }
+        // Create a temporary board to test the move
+        HexBoard tempBoard = *this;
+        tempBoard.makeMove(row, col, player);
+        
+        // Check if this is a winning move
+        if (tempBoard.checkWin(player)) {
+            return 10000;  // Highest score for winning moves
         }
         
-        std::vector<std::vector<bool>> visited(size, std::vector<bool>(size, false));
-        int connectivity = calculateConnectivity(player, visited);
+        // Check if this move would block opponent's win
+        Player opponent = (player == PLAYER1) ? PLAYER2 : PLAYER1;
+        bool isBlockingWin = false;
         
-        int edgeControl = calculateEdgeControl(player);
-        
-        int pathLength = calculateShortestPath(player);
-        int opponentPathLength = calculateShortestPath(opponent);
-        
-        score = 10 * connectivity + 
-                5 * edgeControl + 
-                15 * (opponentPathLength - pathLength) +
-                1 * playerPieces;
-                
-        return score;
-    }
-    
-    int calculateConnectivity(Player player, std::vector<std::vector<bool>>& visited) const {
-        int connectivity = 0;
-        
-        for (int i = 0; i < size; i++) {
-            for (int j = 0; j < size; j++) {
-                if (board[i][j] == player && !visited[i][j]) {
-                    int groupSize = dfs(i, j, player, visited);
-                    connectivity += groupSize * groupSize;
-                }
+        for (const auto& cell : getEmptyCells()) {
+            if (cell.first == row && cell.second == col) {
+                continue;
             }
-        }
-        
-        return connectivity;
-    }
-    
-    int calculateEdgeControl(Player player) const {
-        int control = 0;
-        
-        if (player == PLAYER1) {
-            for (int j = 0; j < size; j++) {
-                if (board[0][j] == player) control += 3;
-                if (board[size-1][j] == player) control += 3;
-            }
-        } else {
-            for (int i = 0; i < size; i++) {
-                if (board[i][0] == player) control += 3;
-                if (board[i][size-1] == player) control += 3;
-            }
-        }
-        
-        return control;
-    }
-    
-    int calculateShortestPath(Player player) const {
-        std::vector<std::vector<int>> distance(size, std::vector<int>(size, INT_MAX));
-        std::vector<std::pair<int, int>> queue;
-        
-        if (player == PLAYER1) {
-            for (int j = 0; j < size; j++) {
-                if (board[0][j] == player || board[0][j] == EMPTY) {
-                    distance[0][j] = (board[0][j] == player) ? 0 : 1;
-                    queue.push_back({0, j});
-                }
-            }
-        } else {
-            for (int i = 0; i < size; i++) {
-                if (board[i][0] == player || board[i][0] == EMPTY) {
-                    distance[i][0] = (board[i][0] == player) ? 0 : 1;
-                    queue.push_back({i, 0});
-                }
-            }
-        }
-        
-        for (size_t idx = 0; idx < queue.size(); idx++) {
-            int r = queue[idx].first;
-            int c = queue[idx].second;
             
-            static const int dx[] = {-1, -1, 0, 0, 1, 1};
-            static const int dy[] = {0, 1, -1, 1, -1, 0};
+            tempBoard.undoMove(row, col);
+            tempBoard.makeMove(cell.first, cell.second, opponent);
             
-            for (int k = 0; k < 6; k++) {
-                int nr = r + dx[k];
-                int nc = c + dy[k];
+            if (tempBoard.checkWin(opponent)) {
+                isBlockingWin = true;
+            }
+            
+            tempBoard.undoMove(cell.first, cell.second);
+            tempBoard.makeMove(row, col, player);
+            
+            if (isBlockingWin) {
+                break;
+            }
+        }
+        
+        if (isBlockingWin) {
+            return 9000;  // Very high score for blocking moves
+        }
+        
+        // Check if the move would be redundant
+        if (isRedundantMove(row, col, player)) {
+            score -= 15;  // Penalize redundant moves
+        }
+        
+        // Prefer moves closer to the center
+        int centerDist = std::abs(row - size/2) + std::abs(col - size/2);
+        score += (size - centerDist);
+        
+        // Evaluate connections to existing pieces
+        for (int k = 0; k < 6; k++) {
+            int nr = row + dx[k];
+            int nc = col + dy[k];
+            
+            if (nr >= 0 && nr < size && nc >= 0 && nc < size) {
+                if (board[nr][nc] == player) {
+                    score += 3;  // Bonus for connecting to existing pieces
+                } else if (board[nr][nc] == EMPTY) {
+                    score += 1;  // Small bonus for potential future connections
+                }
+            }
+        }
+        
+        // Bonus for positioning based on player's goal direction
+        if (player == PLAYER1) {  // Blue player wants to connect top-bottom
+            score += (size - std::abs(col - size/2));  // Prefer central columns
+            // Bonus for pieces on the edges the player wants to connect
+            if (row == 0 || row == size-1) {
+                score += 5;
+            }
+        } else {  // Red player wants to connect left-right
+            score += (size - std::abs(row - size/2));  // Prefer central rows
+            // Bonus for pieces on the edges the player wants to connect
+            if (col == 0 || col == size-1) {
+                score += 5;
+            }
+        }
+        
+        // Bonus for forming triangular patterns (strong in Hex)
+        for (int k = 0; k < 6; k++) {
+            int nr1 = row + dx[k];
+            int nc1 = col + dy[k];
+            
+            if (nr1 >= 0 && nr1 < size && nc1 >= 0 && nc1 < size && 
+                board[nr1][nc1] == player) {
                 
-                if (nr >= 0 && nr < size && nc >= 0 && nc < size) {
-                    int newDist = distance[r][c] + ((board[nr][nc] == player) ? 0 : 1);
+                for (int l = k+1; l < 6; l++) {
+                    int nr2 = row + dx[l];
+                    int nc2 = col + dy[l];
                     
-                    if (newDist < distance[nr][nc]) {
-                        distance[nr][nc] = newDist;
-                        queue.push_back({nr, nc});
+                    if (nr2 >= 0 && nr2 < size && nc2 >= 0 && nc2 < size && 
+                        board[nr2][nc2] == player) {
+                        score += 5;  // Bonus for forming a triangle
                     }
                 }
             }
         }
         
-        int minDist = INT_MAX;
-        
-        if (player == PLAYER1) {
-            for (int j = 0; j < size; j++) {
-                minDist = std::min(minDist, distance[size-1][j]);
-            }
-        } else {
-            for (int i = 0; i < size; i++) {
-                minDist = std::min(minDist, distance[i][size-1]);
-            }
-        }
-        
-        return minDist;
+        return score;
     }
     
-    int dfs(int i, int j, Player player, std::vector<std::vector<bool>>& visited) const {
-        if (i < 0 || i >= size || j < 0 || j >= size || 
-            visited[i][j] || board[i][j] != player) {
-            return 0;
+    int evaluate(Player maximizingPlayer) const {
+        // Check for immediate win/loss
+        if (checkWin(maximizingPlayer)) {
+            return 1000;
         }
         
-        visited[i][j] = true;
-        int count = 1;
-        
-        static const int dx[] = {-1, -1, 0, 0, 1, 1};
-        static const int dy[] = {0, 1, -1, 1, -1, 0};
-        
-        for (int k = 0; k < 6; k++) {
-            int ni = i + dx[k];
-            int nj = j + dy[k];
-            count += dfs(ni, nj, player, visited);
+        Player opponent = (maximizingPlayer == PLAYER1) ? PLAYER2 : PLAYER1;
+        if (checkWin(opponent)) {
+            return -1000;
         }
         
-        return count;
-    }
-    
-    void print() const {
+        // Heuristic evaluation
+        int playerScore = 0;
+        int opponentScore = 0;
+        
+        // Count piece advantage and edge control
         for (int i = 0; i < size; i++) {
-            for (int s = 0; s < i; s++) {
-                std::cout << " ";
-            }
-            
             for (int j = 0; j < size; j++) {
-                char symbol;
-                switch (board[i][j]) {
-                    case EMPTY: symbol = '.'; break;
-                    case PLAYER1: symbol = 'X'; break;
-                    case PLAYER2: symbol = 'O'; break;
+                if (board[i][j] == maximizingPlayer) {
+                    playerScore += 1;
+                    
+                    // Bonus for edge pieces based on player's goal
+                    if ((maximizingPlayer == PLAYER1 && (i == 0 || i == size-1)) ||
+                        (maximizingPlayer == PLAYER2 && (j == 0 || j == size-1))) {
+                        playerScore += 2;
+                    }
+                    
+                    // Bonus for central positioning
+                    int centerDist = std::abs(i - size/2) + std::abs(j - size/2);
+                    playerScore += (size - centerDist) / 2;
+                    
+                    // Bonus for connections
+                    for (int k = 0; k < 6; k++) {
+                        int ni = i + dx[k];
+                        int nj = j + dy[k];
+                        
+                        if (ni >= 0 && ni < size && nj >= 0 && nj < size && 
+                            board[ni][nj] == maximizingPlayer) {
+                            playerScore += 1;
+                        }
+                    }
+                } 
+                else if (board[i][j] == opponent) {
+                    opponentScore += 1;
+                    
+                    // Bonus for edge pieces based on opponent's goal
+                    if ((opponent == PLAYER1 && (i == 0 || i == size-1)) ||
+                        (opponent == PLAYER2 && (j == 0 || j == size-1))) {
+                        opponentScore += 2;
+                    }
+                    
+                    // Bonus for central positioning
+                    int centerDist = std::abs(i - size/2) + std::abs(j - size/2);
+                    opponentScore += (size - centerDist) / 2;
+                    
+                    // Bonus for connections
+                    for (int k = 0; k < 6; k++) {
+                        int ni = i + dx[k];
+                        int nj = j + dy[k];
+                        
+                        if (ni >= 0 && ni < size && nj >= 0 && nj < size && 
+                            board[ni][nj] == opponent) {
+                            opponentScore += 1;
+                        }
+                    }
                 }
-                std::cout << symbol;
-                if (j < size - 1) std::cout << " ";
             }
-            std::cout << std::endl;
         }
+        
+        return playerScore - opponentScore;
     }
     
     int getSize() const {
@@ -623,17 +510,17 @@ public:
 
 int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPlayer, 
               Player currentPlayer, bool useCache = true) {
-    
-    // Check for immediate win/loss before using the transposition table
+    // Check for terminal states
     if (board.checkWin(currentPlayer)) {
-        return 1000;
+        return 1000;  // Win for current player
     }
     
     Player opponent = (currentPlayer == PLAYER1) ? PLAYER2 : PLAYER1;
     if (board.checkWin(opponent)) {
-        return -1000;
+        return -1000;  // Loss for current player
     }
     
+    // Check transposition table if caching is enabled
     if (useCache) {
         std::vector<std::vector<int>> boardState = board.getBoard();
         
@@ -641,11 +528,11 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         if (it != transpositionTable.end() && it->second.depth >= depth) {
             TTEntry entry = it->second;
             if (entry.flag == 0) {
-                return entry.value;
+                return entry.value;  // Exact value
             } else if (entry.flag == 1) {
-                alpha = std::max(alpha, entry.value);
+                alpha = std::max(alpha, entry.value);  // Lower bound
             } else if (entry.flag == 2) {
-                beta = std::min(beta, entry.value);
+                beta = std::min(beta, entry.value);  // Upper bound
             }
             
             if (alpha >= beta) {
@@ -654,20 +541,21 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         }
     }
     
+    // Reached the depth limit, evaluate the position
     if (depth == 0) {
         return board.evaluate(currentPlayer);
     }
     
+    // Get possible moves ordered by heuristic evaluation
     std::vector<std::pair<int, int>> possibleMoves;
     
     if (maximizingPlayer) {
         possibleMoves = board.getOrderedMoves(currentPlayer);
     } else {
-        Player opponent = (currentPlayer == PLAYER1) ? PLAYER2 : PLAYER1;
         possibleMoves = board.getOrderedMoves(opponent);
     }
     
-    // If no moves available, return evaluation
+    // No moves available
     if (possibleMoves.empty()) {
         return board.evaluate(currentPlayer);
     }
@@ -681,7 +569,7 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         for (const auto& move : possibleMoves) {
             board.makeMove(move.first, move.second, currentPlayer);
             
-            // Check for immediate win after move
+            // Check for immediate win
             if (board.checkWin(currentPlayer)) {
                 board.undoMove(move.first, move.second);
                 return 1000;
@@ -698,6 +586,7 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
             }
         }
         
+        // Set flag for transposition table entry
         if (value <= originalAlpha) {
             flag = 2;  // Upper bound
         } else if (value >= beta) {
@@ -707,12 +596,10 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         }
     } else {
         value = INT_MAX;
-        Player opponent = (currentPlayer == PLAYER1) ? PLAYER2 : PLAYER1;
-        
         for (const auto& move : possibleMoves) {
             board.makeMove(move.first, move.second, opponent);
             
-            // Check for immediate loss after opponent's move
+            // Check for immediate loss
             if (board.checkWin(opponent)) {
                 board.undoMove(move.first, move.second);
                 return -1000;
@@ -729,6 +616,7 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
             }
         }
         
+        // Set flag for transposition table entry
         if (value <= originalAlpha) {
             flag = 2;  // Upper bound
         } else if (value >= beta) {
@@ -738,7 +626,7 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
         }
     }
     
-    // Store the result in the transposition table
+    // Store result in transposition table if caching is enabled
     if (useCache) {
         std::vector<std::vector<int>> boardState = board.getBoard();
         transpositionTable[boardState] = {depth, value, flag};
@@ -748,78 +636,68 @@ int alphabeta(HexBoard& board, int depth, int alpha, int beta, bool maximizingPl
 }
 
 std::pair<int, int> findBestMove(HexBoard& board, int maxDepth, Player player) {
-    // Clear the transposition table at the start of a new search
+    // Clear transposition table for a fresh search
     transpositionTable.clear();
     
     std::pair<int, int> bestMove = {-1, -1};
+    int size = board.getSize();
     
-    // First, check for any immediate winning moves
+    // Check for empty board - play in center
+    bool emptyBoard = true;
+    for (const auto& move : board.getEmptyCells()) {
+        if (board.getBoard()[move.first][move.second] != EMPTY) {
+            emptyBoard = false;
+            break;
+        }
+    }
+    
+    if (emptyBoard) {
+        int center = size / 2;
+        return {center, center};
+    }
+    
+    // First, check for immediate winning moves
     std::vector<std::pair<int, int>> possibleMoves = board.getOrderedMoves(player);
     for (const auto& move : possibleMoves) {
         board.makeMove(move.first, move.second, player);
         if (board.checkWin(player)) {
             board.undoMove(move.first, move.second);
-            return move;  // Return immediately if we found a winning move
-        }
-        board.undoMove(move.first, move.second);
-    }
-    
-    // Next, check if opponent has any immediate winning moves and block them
-    Player opponent = (player == PLAYER1) ? PLAYER2 : PLAYER1;
-    for (const auto& move : possibleMoves) {
-        board.makeMove(move.first, move.second, opponent);
-        if (board.checkWin(opponent)) {
-            board.undoMove(move.first, move.second);
-            // This move would be a win for the opponent, so we should block it
             return move;
         }
         board.undoMove(move.first, move.second);
     }
     
-    // If it's an empty board, just play near the center
-    bool emptyBoard = true;
-    for (int i = 0; i < board.getSize(); i++) {
-        for (int j = 0; j < board.getSize(); j++) {
-            if (board.getBoard()[i][j] != 0) {
-                emptyBoard = false;
-                break;
-            }
+    // Next, check for immediate blocking moves
+    Player opponent = (player == PLAYER1) ? PLAYER2 : PLAYER1;
+    for (const auto& move : possibleMoves) {
+        board.makeMove(move.first, move.second, opponent);
+        if (board.checkWin(opponent)) {
+            board.undoMove(move.first, move.second);
+            return move;
         }
-        if (!emptyBoard) break;
+        board.undoMove(move.first, move.second);
     }
     
-    if (emptyBoard) {
-        int center = board.getSize() / 2;
-        return {center, center};
-    }
-    
-    // Iterative deepening: start with shallow searches and go deeper
+    // Use iterative deepening to find the best move
     for (int currentDepth = 1; currentDepth <= maxDepth; currentDepth++) {
         int bestValue = INT_MIN;
         std::pair<int, int> tempBestMove = {-1, -1};
         
-        // Use a narrowing window for alpha-beta
-        int alpha = INT_MIN;
-        int beta = INT_MAX;
-        
         for (const auto& move : possibleMoves) {
             board.makeMove(move.first, move.second, player);
             
-            // Early exit if this move is a win
+            // Early exit for winning moves
             if (board.checkWin(player)) {
                 board.undoMove(move.first, move.second);
                 return move;
             }
             
-            int moveValue = alphabeta(board, currentDepth - 1, alpha, beta, false, player, true);
+            int moveValue = alphabeta(board, currentDepth - 1, INT_MIN, INT_MAX, false, player, true);
             board.undoMove(move.first, move.second);
             
             if (moveValue > bestValue) {
                 bestValue = moveValue;
                 tempBestMove = move;
-                
-                // Update alpha to enable better pruning
-                alpha = std::max(alpha, bestValue);
             }
         }
         
@@ -833,17 +711,19 @@ std::pair<int, int> findBestMove(HexBoard& board, int maxDepth, Player player) {
         }
     }
     
-    // If we still don't have a move, pick a random valid one
+    // If no good move found (shouldn't happen), select a random valid move
     if (bestMove.first == -1 && !possibleMoves.empty()) {
-        int randomIndex = rand() % possibleMoves.size();
-        bestMove = possibleMoves[randomIndex];
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<size_t> dist(0, possibleMoves.size() - 1);
+        bestMove = possibleMoves[dist(gen)];
     }
     
     return bestMove;
 }
 
 PYBIND11_MODULE(hex_cpp, m) {
-    m.doc() = "C++ implementation of Hex game with alpha-beta pruning";
+    m.doc() = "C++ implementation of Hex game with alpha-beta pruning AI";
     
     py::enum_<Player>(m, "Player")
         .value("EMPTY", Player::EMPTY)
@@ -858,16 +738,12 @@ PYBIND11_MODULE(hex_cpp, m) {
         .def("make_move", &HexBoard::makeMove)
         .def("undo_move", &HexBoard::undoMove)
         .def("get_empty_cells", &HexBoard::getEmptyCells)
-        .def("get_ordered_moves", &HexBoard::getOrderedMoves)
-        .def("is_game_over", &HexBoard::isGameOver)
         .def("check_win", &HexBoard::checkWin)
-        .def("evaluate", &HexBoard::evaluate)
-        .def("print", &HexBoard::print)
         .def("get_size", &HexBoard::getSize);
     
     m.def("find_best_move", &findBestMove, 
           py::arg("board"), py::arg("depth") = 3, py::arg("player") = Player::PLAYER1,
-          "Find the best move using enhanced alpha-beta pruning with iterative deepening");
+          "Find the best move using alpha-beta pruning with iterative deepening");
     
     m.def("alphabeta", &alphabeta,
           py::arg("board"), py::arg("depth"), py::arg("alpha"), py::arg("beta"),
