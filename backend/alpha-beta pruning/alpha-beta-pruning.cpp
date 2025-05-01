@@ -140,9 +140,11 @@ private:
         // Check if virtual nodes are connected
         if (player == PLAYER1) {
             return find(topVirtual) == find(bottomVirtual);
-        } else {
+        } else if (player == PLAYER2) {
             return find(leftVirtual) == find(rightVirtual);
         }
+        
+        return false;
     }
 
     mutable std::unordered_map<std::string, bool> vcCache;
