@@ -311,7 +311,7 @@ class HexBoard(QWidget):
 
                     # If swap in AvA mode, trigger next AI move
                     if not self.game.game_over and self.main_window.game_mode == "AvA":
-                        QTimer.singleShot(500, self.trigger_ai_move)
+                        QTimer.singleShot(200, self.trigger_ai_move)
                     return
 
         # Get best move from AI

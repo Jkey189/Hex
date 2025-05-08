@@ -375,56 +375,70 @@ public:
             score -= 15;  // Penalize redundant moves
         }
         
-        // Prefer moves closer to the center
-        int centerDist = std::abs(row - size/2) + std::abs(col - size/2);
-        score += (size - centerDist);
+        // Count adjacent pieces of the same color (connectivity focus)
+        int adjacentPlayerPieces = 0;
+        int secondOrderConnections = 0;  // Pieces that would be connected through this move
         
-        // Evaluate connections to existing pieces
         for (int k = 0; k < 6; k++) {
             int nr = row + dx[k];
             int nc = col + dy[k];
             
             if (nr >= 0 && nr < size && nc >= 0 && nc < size) {
                 if (board[nr][nc] == player) {
-                    score += 3;  // Bonus for connecting to existing pieces
-                } else if (board[nr][nc] == EMPTY) {
+                    adjacentPlayerPieces++;
+                    
+                    // Check if this piece connects to other player pieces
+                    for (int l = 0; l < 6; l++) {
+                        if (k == l) continue; // Skip the original direction
+                        
+                        int nr2 = row + dx[l];
+                        int nc2 = col + dy[l];
+                        
+                        if (nr2 >= 0 && nr2 < size && nc2 >= 0 && nc2 < size && 
+                            board[nr2][nc2] == player) {
+                            secondOrderConnections++;
+                        }
+                    }
+                } 
+                else if (board[nr][nc] == EMPTY) {
                     score += 1;  // Small bonus for potential future connections
                 }
             }
         }
         
-        // Bonus for positioning based on player's goal direction
+        // Strongly prioritize moves that connect existing pieces
+        score += adjacentPlayerPieces * 20;
+        
+        // Extra bonus for moves that connect multiple groups
+        score += secondOrderConnections * 5;
+        
+        // Direction-based strategic scoring
         if (player == PLAYER1) {  // Blue player wants to connect top-bottom
-            score += (size - std::abs(col - size/2));  // Prefer central columns
+            // Prefer central columns for flexibility
+            score += (size - std::abs(col - size/2)) * 2;
+            
             // Bonus for pieces on the edges the player wants to connect
             if (row == 0 || row == size-1) {
-                score += 5;
+                score += 15;  // Increased from 5 to emphasize edge connections
             }
-        } else {  // Red player wants to connect left-right
-            score += (size - std::abs(row - size/2));  // Prefer central rows
+            
+            // Progressive bonus for advancing toward the opposite edge
+            if (row > 0 && row < size-1) {
+                score += row * 2;  // Increasing bonus as we move toward bottom
+            }
+        } 
+        else {  // Red player wants to connect left-right
+            // Prefer central rows for flexibility
+            score += (size - std::abs(row - size/2)) * 2;
+            
             // Bonus for pieces on the edges the player wants to connect
             if (col == 0 || col == size-1) {
-                score += 5;
+                score += 15;  // Increased from 5 to emphasize edge connections
             }
-        }
-        
-        // Bonus for forming triangular patterns (strong in Hex)
-        for (int k = 0; k < 6; k++) {
-            int nr1 = row + dx[k];
-            int nc1 = col + dy[k];
             
-            if (nr1 >= 0 && nr1 < size && nc1 >= 0 && nc1 < size && 
-                board[nr1][nc1] == player) {
-                
-                for (int l = k+1; l < 6; l++) {
-                    int nr2 = row + dx[l];
-                    int nc2 = col + dy[l];
-                    
-                    if (nr2 >= 0 && nr2 < size && nc2 >= 0 && nc2 < size && 
-                        board[nr2][nc2] == player) {
-                        score += 5;  // Bonus for forming a triangle
-                    }
-                }
+            // Progressive bonus for advancing toward the opposite edge
+            if (col > 0 && col < size-1) {
+                score += col * 2;  // Increasing bonus as we move toward right
             }
         }
         
